@@ -4,6 +4,22 @@ import type { Bucket, DaySummary } from '../../core/aggregate'
 import type { Project } from '../../core/types'
 import { duration, percent, productivityColor, weekdayShort } from '../lib/format'
 import { dayStartTs } from '../../core/day'
+import { Empty } from './Empty'
+
+/**
+ * Bar fills in the weekly stack are washes rather than the raw productivity
+ * tokens. Those tokens are tuned to be read as a 8px swatch; at 150px of solid
+ * area they overwhelm everything else on the page, which is the opposite of
+ * what a weekly overview is for.
+ */
+const STACK_FILLS: Record<string, string> = {
+  productive: 'linear-gradient(180deg, rgba(70, 207, 135, 0.85), rgba(70, 207, 135, 0.5))',
+  neutral: 'linear-gradient(180deg, rgba(115, 134, 160, 0.7), rgba(115, 134, 160, 0.42))',
+  distracting: 'linear-gradient(180deg, rgba(242, 104, 127, 0.8), rgba(242, 104, 127, 0.48))',
+  // Away time caps every column, so at full opacity it reads as a solid box
+  // sitting on top of the day rather than as absence.
+  idle: 'rgba(34, 42, 55, 0.5)',
+}
 
 /** Stat tile: one headline number with a supporting line and optional meter. */
 export const Stat = memo(function Stat({
@@ -54,7 +70,7 @@ export const Breakdown = memo(function Breakdown({
     return (b: Bucket) => byName.get(b.key) || productivityColor(b.productivity)
   }, [projects])
 
-  if (!rows.length) return <div className="empty">{emptyLabel}</div>
+  if (!rows.length) return <Empty title={emptyLabel} />
 
   return (
     <div>
@@ -71,7 +87,7 @@ export const Breakdown = memo(function Breakdown({
           </div>
           <div className="bar-value">
             {duration(b.seconds)}
-            <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{percent(b.share)}</div>
+            <small>{percent(b.share)}</small>
           </div>
         </div>
       ))}
@@ -81,11 +97,13 @@ export const Breakdown = memo(function Breakdown({
 
 /** Focus-score ring with a productive/neutral/distracting legend. */
 export const FocusRing = memo(function FocusRing({ summary }: { summary: DaySummary }) {
-  const size = 148
-  const stroke = 12
+  const size = 152
+  const stroke = 10
   const radius = (size - stroke) / 2
   const circumference = 2 * Math.PI * radius
   const total = summary.totalSeconds || 1
+  /** Hairline of track showing between arcs, so the segments read as parts. */
+  const GAP = 2.5
 
   const arcs = useMemo(() => {
     const parts = [
@@ -96,7 +114,15 @@ export const FocusRing = memo(function FocusRing({ summary }: { summary: DaySumm
     let offset = 0
     return parts.map((p) => {
       const share = p.seconds / total
-      const arc = { ...p, share, dash: share * circumference, offset: -offset * circumference }
+      const length = share * circumference
+      const arc = {
+        ...p,
+        share,
+        // Never let the gap eat the whole segment — a sliver still has to be
+        // visible, so short arcs simply lose their gap instead.
+        dash: Math.max(0.5, length - (length > GAP * 2 ? GAP : 0)),
+        offset: -offset * circumference,
+      }
       offset += share
       return arc
     })
@@ -118,6 +144,7 @@ export const FocusRing = memo(function FocusRing({ summary }: { summary: DaySumm
             a.share > 0.001 ? (
               <circle
                 key={a.key}
+                className="ring-arc"
                 cx={size / 2}
                 cy={size / 2}
                 r={radius}
@@ -141,17 +168,13 @@ export const FocusRing = memo(function FocusRing({ summary }: { summary: DaySumm
       <div className="legend">
         {arcs.map((a) => (
           <div className="legend-row" key={a.key}>
-            <i
-              style={{ width: 8, height: 8, borderRadius: 2, background: a.color, flex: '0 0 8px' }}
-            />
+            <i style={{ background: a.color }} />
             {a.key}
             <b>{duration(a.seconds)}</b>
           </div>
         ))}
         <div className="legend-row">
-          <i
-            style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--idle)', flex: '0 0 8px' }}
-          />
+          <i style={{ background: 'var(--surface-4)' }} />
           Away
           <b>{duration(summary.idleSeconds)}</b>
         </div>
@@ -182,10 +205,10 @@ export const WeekChart = memo(function WeekChart({
       {days.map((d) => {
         const stackHeight = ((d.totalSeconds + d.idleSeconds) / max) * 100
         const segments = [
-          { key: 'p', seconds: d.productiveSeconds, color: 'var(--productive)' },
-          { key: 'n', seconds: d.neutralSeconds, color: 'var(--neutral)' },
-          { key: 'd', seconds: d.distractingSeconds, color: 'var(--distracting)' },
-          { key: 'i', seconds: d.idleSeconds, color: 'var(--idle)' },
+          { key: 'p', seconds: d.productiveSeconds, fill: STACK_FILLS.productive },
+          { key: 'n', seconds: d.neutralSeconds, fill: STACK_FILLS.neutral },
+          { key: 'd', seconds: d.distractingSeconds, fill: STACK_FILLS.distracting },
+          { key: 'i', seconds: d.idleSeconds, fill: STACK_FILLS.idle },
         ]
         const stackTotal = Math.max(1, d.totalSeconds + d.idleSeconds)
         return (
@@ -206,7 +229,7 @@ export const WeekChart = memo(function WeekChart({
                   <div
                     key={s.key}
                     className="week-seg"
-                    style={{ height: `${(s.seconds / stackTotal) * 100}%`, background: s.color }}
+                    style={{ height: `${(s.seconds / stackTotal) * 100}%`, background: s.fill }}
                   />
                 ) : null
               )}

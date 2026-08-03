@@ -1,8 +1,12 @@
+import type { ComponentType } from 'react'
 import { useState } from 'react'
 
 import { Wordmark } from './components/Brand'
+import { Empty } from './components/Empty'
+import { IconProjects, IconSettings, IconToday, IconWeek } from './components/Icons'
 import { duration } from './lib/format'
-import { useOpenTime } from './state/useOpenTime'
+import type { OpenTimeState } from './state/useOpenTime'
+import { useNow, useOpenTime } from './state/useOpenTime'
 import { ProjectsView } from './views/ProjectsView'
 import { SettingsView } from './views/SettingsView'
 import { TodayView } from './views/TodayView'
@@ -10,11 +14,11 @@ import { WeekView } from './views/WeekView'
 
 type Tab = 'today' | 'week' | 'projects' | 'settings'
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'today', label: 'Today' },
-  { id: 'week', label: 'This week' },
-  { id: 'projects', label: 'Projects & rules' },
-  { id: 'settings', label: 'Settings' },
+const TABS: Array<{ id: Tab; label: string; Icon: ComponentType<{ className?: string }> }> = [
+  { id: 'today', label: 'Today', Icon: IconToday },
+  { id: 'week', label: 'This week', Icon: IconWeek },
+  { id: 'projects', label: 'Projects & rules', Icon: IconProjects },
+  { id: 'settings', label: 'Settings', Icon: IconSettings },
 ]
 
 export function App() {
@@ -28,51 +32,83 @@ export function App() {
           <Wordmark />
         </nav>
         <main className="main">
-          <div className="empty">Loading your day…</div>
+          <div style={{ paddingTop: 120 }}>
+            <Empty title="Opening your day…" hint="Reading today's sessions from local storage." />
+          </div>
         </main>
       </div>
     )
   }
 
-  const status = app.status
-
   return (
     <div className="app">
       <nav className="rail">
         <Wordmark />
+        <div className="rail-section">Workspace</div>
         {TABS.map((t) => (
           <button
             key={t.id}
             className={`nav-item${tab === t.id ? ' active' : ''}`}
+            aria-current={tab === t.id ? 'page' : undefined}
             onClick={() => setTab(t.id)}
           >
-            <i className="dot" />
+            <t.Icon className="nav-icon" />
             {t.label}
           </button>
         ))}
 
-        <div className="rail-footer">
-          <div>
-            {status?.paused
-              ? 'Paused'
-              : status?.mode === 'active'
-                ? 'Tracking'
-                : 'Idle — waiting for input'}
-          </div>
-          <div>{status?.captureAdapter}</div>
-          {status?.stretchStart ? (
-            <div>{duration((Date.now() - status.stretchStart) / 1000)} in this stretch</div>
-          ) : null}
-          <div>v{app.appVersion}</div>
-        </div>
+        <RailFooter app={app} />
       </nav>
 
+      {/* Keying on the tab remounts the subtree, which is what triggers the
+          view-in transition — the point being that switching reads as a move
+          rather than a repaint. */}
       <main className="main">
-        {tab === 'today' ? <TodayView app={app} /> : null}
-        {tab === 'week' ? <WeekView app={app} /> : null}
-        {tab === 'projects' ? <ProjectsView app={app} /> : null}
-        {tab === 'settings' ? <SettingsView app={app} /> : null}
+        <div className="view" key={tab}>
+          {tab === 'today' ? <TodayView app={app} /> : null}
+          {tab === 'week' ? <WeekView app={app} /> : null}
+          {tab === 'projects' ? <ProjectsView app={app} /> : null}
+          {tab === 'settings' ? <SettingsView app={app} /> : null}
+        </div>
       </main>
+    </div>
+  )
+}
+
+/**
+ * The always-on status block at the bottom of the rail: what the engine is
+ * doing, what it is doing it with, and how long the current unbroken stretch
+ * has run. It owns its own tick so the rest of the shell never re-renders.
+ */
+function RailFooter({ app }: { app: OpenTimeState }) {
+  const now = useNow(1000)
+  const status = app.status
+  const state = status?.paused ? 'paused' : status?.mode === 'active' ? 'tracking' : 'idle'
+  const stretchSeconds = status?.stretchStart ? (now - status.stretchStart) / 1000 : 0
+
+  return (
+    <div className="rail-footer">
+      <div className={`rail-status ${state}`}>
+        <i className="beat" />
+        {state === 'paused' ? 'Paused' : state === 'tracking' ? 'Tracking' : 'Waiting for input'}
+      </div>
+      {/* Only shown once the stretch is worth a number: below a minute
+          `duration()` renders an em dash, which reads as an error rather than
+          as "just started". */}
+      {stretchSeconds >= 60 && state !== 'paused' ? (
+        <div className="rail-meta">
+          <span>This stretch</span>
+          <span>{duration(stretchSeconds)}</span>
+        </div>
+      ) : null}
+      <div className="rail-meta">
+        <span>Capture</span>
+        <span title={status?.captureAdapter}>{status?.captureAdapter ?? '—'}</span>
+      </div>
+      <div className="rail-meta">
+        <span>OpenTime</span>
+        <span>v{app.appVersion}</span>
+      </div>
     </div>
   )
 }

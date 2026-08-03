@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { summarizeDay, summarizeWeek } from '../../core/aggregate'
 import { dayStartTs } from '../../core/day'
 import { Breakdown, Stat, WeekChart } from '../components/Charts'
+import { RefreshButton } from '../components/RefreshButton'
 import { duration, longDate, percent } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
 
@@ -30,9 +31,7 @@ export function WeekView({ app }: { app: OpenTimeState }) {
             active days
           </p>
         </div>
-        <button className="btn ghost" onClick={() => void app.refresh()}>
-          Refresh
-        </button>
+        <RefreshButton onRefresh={() => void app.refresh()} />
       </div>
 
       <div className="grid" style={{ gap: 14 }}>
@@ -69,7 +68,10 @@ export function WeekView({ app }: { app: OpenTimeState }) {
         </div>
 
         <div className="card">
-          <h2 className="card-title">Daily breakdown — click a day to open it</h2>
+          <h2 className="card-title">
+            Daily breakdown
+            <span className="hint">Click a day to open it</span>
+          </h2>
           <WeekChart
             days={days}
             selected={app.selectedDay}
@@ -85,9 +87,21 @@ export function WeekView({ app }: { app: OpenTimeState }) {
           </div>
 
           <div className="card">
-            <h2 className="card-title">Day by day</h2>
+            <h2 className="card-title">
+              Day by day
+              <span className="hint">Focus score</span>
+            </h2>
             {days.map((d) => (
-              <div className="bar-row" key={d.dayKey}>
+              <div
+                className={`bar-row clickable${d.dayKey === app.selectedDay ? ' on' : ''}`}
+                key={d.dayKey}
+                role="button"
+                tabIndex={0}
+                onClick={() => app.selectDay(d.dayKey)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') app.selectDay(d.dayKey)
+                }}
+              >
                 <div>
                   <div className="bar-name">
                     <i
@@ -114,9 +128,7 @@ export function WeekView({ app }: { app: OpenTimeState }) {
                 </div>
                 <div className="bar-value">
                   {duration(d.totalSeconds)}
-                  <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                    focus {d.focusScore}
-                  </div>
+                  <small>focus {d.focusScore}</small>
                 </div>
               </div>
             ))}

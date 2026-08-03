@@ -4,8 +4,10 @@ import { summarizeDay } from '../../core/aggregate'
 import { dayStartTs } from '../../core/day'
 import type { Session } from '../../core/types'
 import { Breakdown, FocusRing, Stat } from '../components/Charts'
+import { IconInfo } from '../components/Icons'
 import { Inspector } from '../components/Inspector'
 import { NowCard } from '../components/NowCard'
+import { RefreshButton } from '../components/RefreshButton'
 import { Timeline } from '../components/Timeline'
 import { duration, longDate, percent } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
@@ -32,23 +34,26 @@ export function TodayView({ app }: { app: OpenTimeState }) {
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">{isToday ? 'Today' : longDate(dayStartTs(day.dayKey, settings.dayStartHour))}</h1>
+          <h1 className="page-title">
+            {isToday ? 'Today' : longDate(dayStartTs(day.dayKey, settings.dayStartHour))}
+          </h1>
           <p className="page-sub">
-            {longDate(dayStartTs(day.dayKey, settings.dayStartHour))} ·{' '}
-            {duration(summary.totalSeconds)} tracked · {summary.switches} context switches
+            {longDate(dayStartTs(day.dayKey, settings.dayStartHour))}
+            <span className="sep">·</span>
+            {duration(summary.totalSeconds)} tracked
+            <span className="sep">·</span>
+            {summary.switches} context switches
           </p>
         </div>
         <div className="row">
           {app.status?.demo ? <span className="pill info">Demo capture</span> : null}
-          <button className="btn ghost" onClick={() => void app.refresh()}>
-            Refresh
-          </button>
+          <RefreshButton onRefresh={() => void app.refresh()} />
         </div>
       </div>
 
       {app.captureNotice ? (
         <div className="notice">
-          <span>ⓘ</span>
+          <IconInfo />
           <div>
             <strong>Showing generated activity.</strong> {app.captureNotice} Everything below runs
             through the same tracking engine that real capture feeds — only the window samples are
@@ -100,8 +105,14 @@ export function TodayView({ app }: { app: OpenTimeState }) {
         </div>
 
         <div className="grid cols-2">
-          <div className="card">
-            <h2 className="card-title">Timeline</h2>
+          {/* The timeline is a fixed height, so without this it stretches to
+              match the taller right-hand column and trails a large empty
+              area under the legend on tall windows. */}
+          <div className="card" style={{ alignSelf: 'start' }}>
+            <h2 className="card-title">
+              Timeline
+              <span className="hint">Click a block to review it</span>
+            </h2>
             <Timeline
               dayKey={day.dayKey}
               dayStartHour={settings.dayStartHour}
@@ -112,6 +123,30 @@ export function TodayView({ app }: { app: OpenTimeState }) {
               selectedId={selected?.id ?? null}
               onSelect={setSelected}
             />
+            {/* The timeline carries two colour channels at once — fill for the
+                project, left edge for how it counted — so it needs saying. */}
+            <div className="timeline-legend">
+              <span>
+                <i style={{ background: 'var(--productive)' }} />
+                Productive
+              </span>
+              <span>
+                <i style={{ background: 'var(--neutral)' }} />
+                Neutral
+              </span>
+              <span>
+                <i style={{ background: 'var(--distracting)' }} />
+                Distracting
+              </span>
+              <span>
+                <i style={{ background: 'var(--surface-4)' }} />
+                Away
+              </span>
+              <span>
+                <i style={{ background: 'var(--meeting)' }} />
+                Calendar
+              </span>
+            </div>
           </div>
 
           <div className="grid" style={{ gap: 14, alignContent: 'start' }}>

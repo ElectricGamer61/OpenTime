@@ -3,6 +3,8 @@ import { memo, useEffect, useState } from 'react'
 import type { Productivity, Project, Session } from '../../core/types'
 import type { RecategorizeRequest } from '../../shared/ipc'
 import { duration, timeOfDay } from '../lib/format'
+import { Empty } from './Empty'
+import { IconEmptyPointer } from './Icons'
 
 const LEVELS: Productivity[] = ['productive', 'neutral', 'distracting']
 
@@ -35,9 +37,11 @@ export const Inspector = memo(function Inspector({
 
   if (!session) {
     return (
-      <div className="empty">
-        Select a block on the timeline to retag it or teach OpenTime a rule.
-      </div>
+      <Empty
+        glyph={<IconEmptyPointer />}
+        title="Nothing selected"
+        hint="Pick a block on the timeline to retag it, or teach OpenTime a rule that handles it from now on."
+      />
     )
   }
 
@@ -45,14 +49,17 @@ export const Inspector = memo(function Inspector({
   const target = remember === 'app' ? session.app : session.url || session.app
 
   return (
-    <div className="inspector">
-      <div>
-        <div style={{ fontWeight: 600, fontSize: 15 }}>{session.title || session.app}</div>
-        <div style={{ color: 'var(--text-dim)', fontSize: 12.5, marginTop: 2 }}>
+    /* Keyed on the session so switching blocks replays the panel's fade-in —
+       otherwise a click on a different block silently swaps the text and it
+       is easy to miss that anything changed. */
+    <div className="inspector" key={session.id}>
+      <div className="inspector-head">
+        <div className="inspector-title">{session.title || session.app}</div>
+        <div className="inspector-sub">
           {session.app}
           {session.url ? ` · ${session.url}` : ''}
         </div>
-        <div style={{ color: 'var(--text-faint)', fontSize: 12, marginTop: 4 }}>
+        <div className="inspector-when">
           {timeOfDay(session.startTime)} – {timeOfDay(session.endTime)} ·{' '}
           {duration(session.durationSeconds)}
         </div>
@@ -75,7 +82,7 @@ export const Inspector = memo(function Inspector({
 
       <div className="field">
         <label>Counts as</label>
-        <div className="seg">
+        <div className="seg grow">
           {LEVELS.map((level) => (
             <button
               key={level}
@@ -90,7 +97,7 @@ export const Inspector = memo(function Inspector({
 
       <div className="field">
         <label>Remember this</label>
-        <div className="seg">
+        <div className="seg grow">
           <button className={remember === 'none' ? 'on' : ''} onClick={() => setRemember('none')}>
             Just this block
           </button>

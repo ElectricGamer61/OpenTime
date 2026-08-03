@@ -3,11 +3,16 @@ import { memo, useMemo } from 'react'
 import { buildTimeline, positionEvent, timelineWindow } from '../../core/aggregate'
 import type { CalendarEvent, IdleBlock, Project, Session } from '../../core/types'
 import { blockFill, duration, productivityColor, timeOfDay } from '../lib/format'
+import { useNow } from '../state/useOpenTime'
+import { Empty } from './Empty'
+import { IconEmptyTimeline } from './Icons'
 
 const TRACK_HEIGHT = 620
 /** Below this a block cannot fit two lines of text — show the label only. */
 const COMPACT_PX = 36
-/** Below this even one line would spill past the block — show a colour bar. */
+/** Below this even one line would spill past the block — show a colour bar.
+    Raising this trades a clipped descender for an unlabelled stripe, which is
+    the worse of the two: an anonymous bar tells the reader nothing at all. */
 const TINY_PX = 18
 
 interface Props {
@@ -55,17 +60,25 @@ export const Timeline = memo(function Timeline({
     return (label: string) => byName.get(label) || '#64748b'
   }, [projects])
 
+  // Whole hours carry the labels; half hours get a much fainter rule so the
+  // eye can judge a 20-minute block without counting pixels.
   const hours = useMemo(() => {
-    const out: Array<{ ts: number; offset: number }> = []
+    const out: Array<{ ts: number; offset: number; half: boolean }> = []
     const span = window.end - window.start
     const first = new Date(window.start)
     first.setMinutes(0, 0, 0)
-    for (let ts = first.getTime(); ts <= window.end; ts += 3600_000) {
+    for (let ts = first.getTime(); ts <= window.end; ts += 1800_000) {
       if (ts < window.start) continue
-      out.push({ ts, offset: (ts - window.start) / span })
+      out.push({ ts, offset: (ts - window.start) / span, half: new Date(ts).getMinutes() === 30 })
     }
     return out
   }, [window])
+
+  // A minute of resolution is all the "you are here" line can show, so it
+  // re-renders once a minute rather than once a second.
+  const now = useNow(60_000)
+  const nowOffset =
+    now >= window.start && now <= window.end ? (now - window.start) / (window.end - window.start) : null
 
   const positionedEvents = useMemo(
     () =>
@@ -76,23 +89,39 @@ export const Timeline = memo(function Timeline({
   )
 
   if (!sessions.length && !idle.length) {
-    return <div className="empty">No activity recorded for this day.</div>
+    return (
+      <Empty
+        glyph={<IconEmptyTimeline />}
+        title="Nothing tracked for this day"
+        hint="Once OpenTime sees window activity, your day fills in here automatically."
+      />
+    )
   }
 
   return (
     <div className="timeline" style={{ height: TRACK_HEIGHT }}>
       <div className="timeline-hours">
-        {hours.map((h) => (
-          <div className="hour-tick" key={h.ts} style={{ top: h.offset * TRACK_HEIGHT }}>
-            {timeOfDay(h.ts)}
-          </div>
-        ))}
+        {hours
+          .filter((h) => !h.half)
+          .map((h) => (
+            <div className="hour-tick" key={h.ts} style={{ top: h.offset * TRACK_HEIGHT }}>
+              {timeOfDay(h.ts)}
+            </div>
+          ))}
       </div>
 
       <div className="timeline-track">
         {hours.map((h) => (
-          <div className="hour-line" key={h.ts} style={{ top: h.offset * TRACK_HEIGHT }} />
+          <div
+            className={`hour-line${h.half ? ' half' : ''}`}
+            key={h.ts}
+            style={{ top: h.offset * TRACK_HEIGHT }}
+          />
         ))}
+
+        {nowOffset !== null ? (
+          <div className="now-line" style={{ top: nowOffset * TRACK_HEIGHT }} aria-hidden="true" />
+        ) : null}
 
         {blocks.map((b) => {
           // One pixel of air between neighbours so adjacent blocks read as
@@ -131,7 +160,9 @@ export const Timeline = memo(function Timeline({
         <div className="timeline-col-head">Calendar</div>
         <div className="timeline-events" style={{ height: TRACK_HEIGHT }}>
           {positionedEvents.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No events.</div>
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.5 }}>
+              Nothing scheduled.
+            </div>
           ) : (
             positionedEvents.map(({ event, offset, size }) => (
               <div

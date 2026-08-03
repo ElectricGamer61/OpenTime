@@ -14,7 +14,13 @@ const { app, BrowserWindow } = require('electron')
 const outDir = process.argv[2] || 'screenshots'
 const root = path.dirname(__dirname)
 
-const TABS = ['Today', 'This week', 'Projects & rules', 'Settings']
+/** Tab label to click, and the filename README already links to. */
+const TABS = [
+  { tab: 'Today', file: 'today.png' },
+  { tab: 'This week', file: 'week.png' },
+  { tab: 'Projects & rules', file: 'projects.png' },
+  { tab: 'Settings', file: 'settings.png' },
+]
 
 app.disableHardwareAcceleration()
 
@@ -36,8 +42,8 @@ const win = new BrowserWindow({
 await win.loadFile(path.join(root, 'dist/renderer/index.html'))
 await new Promise((r) => setTimeout(r, 2500))
 
-for (const [index, tab] of TABS.entries()) {
-  await win.webContents.executeJavaScript(`
+for (const { tab, file: name } of TABS) {
+  const clicked = await win.webContents.executeJavaScript(`
     (() => {
       const btn = [...document.querySelectorAll('.nav-item')].find(
         (b) => b.textContent.trim() === ${JSON.stringify(tab)}
@@ -46,9 +52,35 @@ for (const [index, tab] of TABS.entries()) {
       return !!btn
     })()
   `)
-  await new Promise((r) => setTimeout(r, 900))
+  // Without this, a renamed tab or a nav that stops responding silently
+  // produces four screenshots of whatever was already on screen.
+  if (!clicked) throw new Error(`no nav item labelled "${tab}"`)
+
+  // Views animate in, and `capturePage()` on a hidden window reads whatever
+  // the offscreen compositor last produced — a fixed sleep captured the
+  // *previous* tab mid-transition. Wait for every running animation that has
+  // a finite end to settle, then give the compositor a frame or two.
+  await win.webContents.executeJavaScript(`
+    Promise.all(
+      document.getAnimations()
+        .filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished.catch(() => {}))
+    ).then(() => {})
+  `)
+  await new Promise((r) => setTimeout(r, 700))
+
+  // Offscreen rendering only rasters what it thinks changed, and the rail is
+  // outside the region the tab switch touched — without this the sidebar in
+  // the PNG still shows the previously selected tab.
+  win.webContents.invalidate()
+  await new Promise((r) => setTimeout(r, 300))
+
+  const active = await win.webContents.executeJavaScript(
+    `document.querySelector('.nav-item.active')?.textContent.trim() ?? null`
+  )
+  if (active !== tab) throw new Error(`clicked "${tab}" but "${active}" is active`)
   const image = await win.webContents.capturePage()
-  const file = path.join(outDir, `${index + 1}-${tab.toLowerCase().replace(/[^a-z]+/g, '-')}.png`)
+  const file = path.join(outDir, name)
   await fs.writeFile(file, image.toPNG())
   console.log('wrote', file)
 }

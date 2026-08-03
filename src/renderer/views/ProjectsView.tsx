@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react'
 import { summarizeDay, summarizeWeek } from '../../core/aggregate'
 import type { CategoryRule, Project } from '../../core/types'
 import { Breakdown } from '../components/Charts'
+import { Empty } from '../components/Empty'
+import { IconEmptyRule } from '../components/Icons'
 import { duration } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
 
@@ -57,7 +59,16 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
       <div className="grid cols-2">
         <div className="grid" style={{ gap: 14, alignContent: 'start' }}>
           <div className="card">
-            <h2 className="card-title">Projects</h2>
+            <h2 className="card-title">
+              Projects
+              <span className="hint">Last 7 days</span>
+            </h2>
+            {app.projects.length === 0 ? (
+              <Empty
+                title="No projects yet"
+                hint="A project groups activity by keyword, so your time lands under a name you chose rather than an app name."
+              />
+            ) : null}
             {app.projects.map((p) => (
               <div className="project-row" key={p.id}>
                 <input
@@ -111,19 +122,23 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
           </div>
 
           <div className="card">
-            <h2 className="card-title">Learned rules</h2>
+            <h2 className="card-title">
+              Learned rules
+              <span className="hint">Checked before projects</span>
+            </h2>
             {app.rules.length === 0 ? (
-              <div className="empty">
-                No rules yet. Retag a block on the timeline and choose “Whole app” or “Matching
-                text” to teach one.
-              </div>
+              <Empty
+                glyph={<IconEmptyRule />}
+                title="No rules yet"
+                hint="Retag a block on the timeline and choose “Whole app” or “Matching text” to teach one."
+              />
             ) : (
               app.rules.map((r) => (
-                <div className="bar-row" key={r.id}>
+                <div className="rule-row" key={r.id}>
                   <div className="bar-name">
                     <span className="pill">{r.kind === 'app' ? 'App' : 'Text'}</span>
                     <span className="mono">{r.match}</span>
-                    <span style={{ color: 'var(--text-faint)' }}>→ {r.category}</span>
+                    <span className="rule-arrow">→ {r.category}</span>
                   </div>
                   <button className="btn ghost danger" onClick={() => removeRule(r)}>
                     Remove
@@ -135,7 +150,10 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
         </div>
 
         <div className="card" style={{ alignSelf: 'start' }}>
-          <h2 className="card-title">Time by category — last 7 days</h2>
+          <h2 className="card-title">
+            Time by category
+            <span className="hint">Last 7 days</span>
+          </h2>
           <Breakdown buckets={weekTotals.byCategory} projects={app.projects} limit={12} />
         </div>
       </div>
