@@ -1,0 +1,154 @@
+import { memo, useMemo } from 'react'
+
+import { buildTimeline, positionEvent, timelineWindow } from '../../core/aggregate'
+import type { CalendarEvent, IdleBlock, Project, Session } from '../../core/types'
+import { blockFill, duration, productivityColor, timeOfDay } from '../lib/format'
+
+const TRACK_HEIGHT = 620
+/** Below this a block cannot fit two lines of text — show the label only. */
+const COMPACT_PX = 36
+/** Below this even one line would spill past the block — show a colour bar. */
+const TINY_PX = 18
+
+interface Props {
+  dayKey: string
+  dayStartHour: number
+  sessions: Session[]
+  idle: IdleBlock[]
+  events: CalendarEvent[]
+  projects: Project[]
+  selectedId: string | null
+  onSelect(session: Session | null): void
+}
+
+/**
+ * The day timeline with the calendar overlaid beside it.
+ *
+ * All geometry comes from `buildTimeline`, which returns fractional offsets —
+ * this component only multiplies by a pixel height. No layout measurement, no
+ * per-frame work.
+ */
+export const Timeline = memo(function Timeline({
+  dayKey,
+  dayStartHour,
+  sessions,
+  idle,
+  events,
+  projects,
+  selectedId,
+  onSelect,
+}: Props) {
+  const window = useMemo(
+    () => timelineWindow(dayKey, dayStartHour, sessions),
+    [dayKey, dayStartHour, sessions]
+  )
+
+  const blocks = useMemo(
+    () => buildTimeline(sessions, idle, window.start, window.end),
+    [sessions, idle, window]
+  )
+
+  // Project colour identifies *what* the block was; productivity colour says
+  // how it counted. Both are needed, so they get separate visual channels.
+  const projectColorFor = useMemo(() => {
+    const byName = new Map(projects.map((p) => [p.name, p.color]))
+    return (label: string) => byName.get(label) || '#64748b'
+  }, [projects])
+
+  const hours = useMemo(() => {
+    const out: Array<{ ts: number; offset: number }> = []
+    const span = window.end - window.start
+    const first = new Date(window.start)
+    first.setMinutes(0, 0, 0)
+    for (let ts = first.getTime(); ts <= window.end; ts += 3600_000) {
+      if (ts < window.start) continue
+      out.push({ ts, offset: (ts - window.start) / span })
+    }
+    return out
+  }, [window])
+
+  const positionedEvents = useMemo(
+    () =>
+      events
+        .filter((e) => !e.allDay && e.end > window.start && e.start < window.end)
+        .map((e) => ({ event: e, ...positionEvent(e, window.start, window.end) })),
+    [events, window]
+  )
+
+  if (!sessions.length && !idle.length) {
+    return <div className="empty">No activity recorded for this day.</div>
+  }
+
+  return (
+    <div className="timeline" style={{ height: TRACK_HEIGHT }}>
+      <div className="timeline-hours">
+        {hours.map((h) => (
+          <div className="hour-tick" key={h.ts} style={{ top: h.offset * TRACK_HEIGHT }}>
+            {timeOfDay(h.ts)}
+          </div>
+        ))}
+      </div>
+
+      <div className="timeline-track">
+        {hours.map((h) => (
+          <div className="hour-line" key={h.ts} style={{ top: h.offset * TRACK_HEIGHT }} />
+        ))}
+
+        {blocks.map((b) => {
+          // One pixel of air between neighbours so adjacent blocks read as
+          // separate stretches rather than one continuous slab.
+          const height = Math.max(4, b.size * TRACK_HEIGHT - 1)
+          const accent =
+            b.kind === 'idle' ? '#3a465a' : productivityColor(b.productivity)
+          const session = b.kind === 'session' ? sessions.find((s) => s.id === b.id) : null
+          return (
+            <div
+              key={b.id}
+              className={`block${b.kind === 'idle' ? ' idle' : ''}${
+                selectedId === b.id ? ' selected' : ''
+              }`}
+              style={{
+                top: b.offset * TRACK_HEIGHT,
+                height,
+                background: b.kind === 'idle' ? undefined : blockFill(projectColorFor(b.label)),
+                borderLeftColor: accent,
+              }}
+              onClick={() => onSelect(session ?? null)}
+              title={`${b.label} · ${duration(b.durationSeconds)} · ${timeOfDay(b.start)}–${timeOfDay(b.end)}`}
+            >
+              {height >= TINY_PX ? <div className="block-label">{b.label}</div> : null}
+              {height >= COMPACT_PX ? (
+                <div className="block-sub">
+                  {duration(b.durationSeconds)} · {b.sublabel}
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+
+      <div>
+        <div className="timeline-col-head">Calendar</div>
+        <div className="timeline-events" style={{ height: TRACK_HEIGHT }}>
+          {positionedEvents.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No events.</div>
+          ) : (
+            positionedEvents.map(({ event, offset, size }) => (
+              <div
+                key={event.id}
+                className="event"
+                style={{ top: offset * TRACK_HEIGHT, height: Math.max(18, size * TRACK_HEIGHT) }}
+                title={`${event.title} · ${timeOfDay(event.start)}–${timeOfDay(event.end)}`}
+              >
+                <div className="event-title">{event.title}</div>
+                <div className="event-time">
+                  {timeOfDay(event.start)} – {timeOfDay(event.end)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+})
