@@ -1399,6 +1399,16 @@ select option {
   padding: 13px 0;
 }
 
+/* Rows whose control is a group of buttons need their natural width, not the
+   fixed 200px column — otherwise three export buttons stack into three lines. */
+.setting-row.wide {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.setting-row > :last-child {
+  justify-self: end;
+}
+
 .setting-row + .setting-row {
   border-top: 1px solid var(--line-soft);
 }
@@ -1536,6 +1546,209 @@ select option {
 .rule-row .rule-arrow {
   color: var(--text-faint);
   white-space: nowrap;
+}
+
+/* ── Insights, goals, corrections, onboarding ───────────────────────────── */
+
+/* Rows whose control is a group of buttons need their natural width, not the
+   fixed control column — otherwise three export buttons stack into three
+   lines. */
+.setting-row.wide {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.setting-row > :last-child {
+  justify-self: end;
+}
+
+.card-note {
+  margin: -6px 0 var(--gap-3);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.btn.small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.row.wrap {
+  flex-wrap: wrap;
+}
+
+.insights {
+  display: grid;
+  gap: var(--gap-2);
+}
+
+/* The tone is carried by a single edge rather than a tinted panel: five
+   saturated cards in a column would shout, and the point of an insight is that
+   it is worth reading, not that it is loud. */
+.insight {
+  padding: var(--gap-2) 13px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border-left: 2px solid var(--neutral);
+}
+
+.insight.good {
+  border-left-color: var(--productive);
+}
+
+.insight.warn {
+  border-left-color: var(--distracting);
+}
+
+.insight-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.insight-detail {
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.goal-row + .goal-row {
+  margin-top: var(--gap-3);
+  padding-top: var(--gap-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+.goal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-1);
+  margin-bottom: var(--gap-1);
+}
+
+.goal-name {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.goal-foot {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.goal-editor {
+  display: grid;
+  gap: var(--gap-2);
+}
+
+.goal-edit-row {
+  display: grid;
+  gap: var(--gap-1);
+  padding: var(--gap-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.goal-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.inspector-actions {
+  padding-top: var(--gap-2);
+  border-top: 1px solid var(--line-soft);
+}
+
+.inspector-error {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--distracting);
+}
+
+/* ── First run ───────────────────────────────────────────────────────────── */
+
+.onboard-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--gap-5);
+  background: rgba(6, 8, 13, 0.8);
+  overflow: auto;
+  animation: onboard-in var(--med) var(--ease) both;
+}
+
+.onboard {
+  width: min(660px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  display: grid;
+  gap: var(--gap-3);
+  padding: var(--gap-5);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.onboard-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.onboard-sub {
+  margin: calc(var(--gap-2) * -1) 0 0;
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+
+.onboard-steps {
+  display: grid;
+  gap: var(--gap-4);
+  margin: 0;
+  padding-left: 20px;
+}
+
+.onboard-steps li {
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+}
+
+.onboard-steps li::marker {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.onboard-step-title {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.onboard-step-body {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+@keyframes onboard-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ── Motion opt-out ─────────────────────────────────────────────────────── */

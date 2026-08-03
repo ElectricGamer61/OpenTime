@@ -94,6 +94,9 @@ export function generateDemoDay(
     ignoredApps: [],
     rules: opts.rules,
     projects: opts.projects,
+    // Every synthetic row says so, so demo history is never mistaken for
+    // observed history — in the UI, in an export, or in a support question.
+    source: 'demo',
     makeId: (() => {
       let n = 0
       return () => `demo_${key}_${n++}`

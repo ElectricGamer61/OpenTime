@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { Settings } from '../../core/types'
+import { DataSettings } from '../components/DataSettings'
 import type { OpenTimeState } from '../state/useOpenTime'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange(v: boolean): void; label: string }) {
@@ -20,14 +21,17 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange(v: boolean): vo
 function Row({
   name,
   desc,
+  wide,
   children,
 }: {
   name: string
   desc: string
+  /** Let the control keep its natural width — for groups of buttons. */
+  wide?: boolean
   children: React.ReactNode
 }) {
   return (
-    <div className="setting-row">
+    <div className={`setting-row${wide ? ' wide' : ''}`}>
       <div>
         <div className="setting-name">{name}</div>
         <div className="setting-desc">{desc}</div>
@@ -40,6 +44,7 @@ function Row({
 export function SettingsView({ app }: { app: OpenTimeState }) {
   const [draft, setDraft] = useState<Settings | null>(app.settings)
   const [ignoreInput, setIgnoreInput] = useState('')
+  const [keywordInput, setKeywordInput] = useState('')
   const [calendarMessage, setCalendarMessage] = useState('')
 
   useEffect(() => setDraft(app.settings), [app.settings])
@@ -170,6 +175,24 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
               <option value="demo">Demo data</option>
             </select>
           </Row>
+
+          <Row
+            wide
+            name="Capture status"
+            desc={
+              app.capture?.notice ||
+              `Reading the focused window through ${app.capture?.adapter || 'the system'}.`
+            }
+          >
+            <div className="row">
+              <span className={`pill ${app.capture?.demo ? 'warn' : 'info'}`}>
+                {app.capture?.demo ? 'Generated' : app.capture?.notice ? 'Limited' : 'Live'}
+              </span>
+              <button className="btn" onClick={() => void app.reloadCapture()}>
+                Check again
+              </button>
+            </div>
+          </Row>
         </div>
 
         <div className="card">
@@ -227,7 +250,74 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
               ))
             )}
           </div>
+
+          <Row
+            name="Private subjects"
+            desc="Any window whose title or web host contains one of these is never recorded, in any application. Use it for a client name, a matter number, or a health portal."
+          >
+            <div />
+          </Row>
+
+          <div className="row" style={{ marginBottom: 10 }}>
+            <input
+              placeholder="Text in a window title, e.g. Project Falcon"
+              value={keywordInput}
+              onChange={(e) => setKeywordInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' || !keywordInput.trim()) return
+                patch({
+                  ignoredTitleKeywords: [
+                    ...draft.ignoredTitleKeywords,
+                    keywordInput.trim().toLowerCase(),
+                  ],
+                })
+                setKeywordInput('')
+              }}
+              style={{ flex: 1 }}
+            />
+            <button
+              className="btn"
+              onClick={() => {
+                if (!keywordInput.trim()) return
+                patch({
+                  ignoredTitleKeywords: [
+                    ...draft.ignoredTitleKeywords,
+                    keywordInput.trim().toLowerCase(),
+                  ],
+                })
+                setKeywordInput('')
+              }}
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="chip-list">
+            {draft.ignoredTitleKeywords.length === 0 ? (
+              <span style={{ color: 'var(--text-faint)', fontSize: 12.5 }}>
+                No private subjects configured.
+              </span>
+            ) : (
+              draft.ignoredTitleKeywords.map((k) => (
+                <span className="chip" key={k}>
+                  {k}
+                  <button
+                    aria-label={`Stop ignoring ${k}`}
+                    onClick={() =>
+                      patch({
+                        ignoredTitleKeywords: draft.ignoredTitleKeywords.filter((x) => x !== k),
+                      })
+                    }
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))
+            )}
+          </div>
         </div>
+
+        <DataSettings app={app} draft={draft} patch={patch} />
 
         <div className="card">
           <h2 className="card-title">Application</h2>

@@ -5,8 +5,8 @@ A lean, local-first automatic time tracker for Windows and macOS.
 OpenTime runs quietly in the tray, notices which application and window you are
 actually working in, and turns that into a timeline, a category breakdown, and a
 focus score — with your calendar overlaid beside it. No timers to start. No
-screenshots. No account, no server, no subscription: everything stays in a file
-on your machine.
+screenshots. No account, no server, no subscription: everything stays in a folder
+on your machine that you can open, export, back up or delete.
 
 ![Today](docs/screenshots/today.png)
 
@@ -18,13 +18,17 @@ on your machine.
 - [Running it](#running-it)
 - [Architecture](#architecture)
 - [Performance notes](#performance-notes)
-- [Storage, and the SQLite migration path](#storage-and-the-sqlite-migration-path)
+- [Storage](#storage)
+- [Your data](#your-data)
 - [Google Calendar](#google-calendar)
 - [Privacy](#privacy)
 - [Packaging for Windows and macOS](#packaging-for-windows-and-macos)
 - [Testing](#testing)
-- [What v0 does not do yet](#what-v0-does-not-do-yet)
+- [What is not built yet](#what-is-not-built-yet)
 - [Relationship to the older Norte tracker](#relationship-to-the-older-norte-tracker)
+
+A category-by-category account of what is shipped, what is deferred, and what
+was left out on purpose is in [`docs/feature-inventory.md`](docs/feature-inventory.md).
 
 ---
 
@@ -48,11 +52,31 @@ distracting. The daily focus score is the productive share of tracked time,
 scaled down by how fragmented that time was — the same four hours score worse
 when they were chopped into forty pieces.
 
+**Corrections that go beyond relabelling.** Split a block that was really two
+pieces of work, merge blocks that were really one, delete one that should not
+exist, add time that happened away from the machine, or claim an away block as
+work — "I was in a meeting". Claiming a block removes it, so the same minutes are
+never counted twice.
+
+**Goals.** Floors and ceilings on a slice of time, daily or weekly. Progress is
+paced against how much of the window has elapsed, so a weekly goal is not
+"behind" every Monday by construction. No streaks, no badges, and both starter
+goals ship switched off.
+
+**Insights.** The few observations worth making out loud: when your focus
+actually peaks, how fragmented the day was, what the meetings cost, and how today
+compares to your *own* recent baseline. The panel renders nothing when there is
+nothing worth saying.
+
 **Calendar overlay.** Meetings render beside the timeline, so time in meetings
 and time in deep work are visible against each other.
 
 **Weekly view.** Seven-day totals, per-day stacked bars, category rollups, and
 the average focus score.
+
+**Export and backup.** Sessions CSV, a daily-summary CSV, and a full JSON backup
+that restores everything. The data is one plain-JSON file per day in a folder you
+can open, copy or delete.
 
 ![This week](docs/screenshots/week.png)
 
@@ -65,7 +89,7 @@ Requires Node 20+.
 ```bash
 npm install          # the native capture module is an optionalDependency; a failure here is not fatal
 npm run dev          # Vite dev server + esbuild watch + Electron
-npm test             # unit tests (111, no Electron needed)
+npm test             # unit tests (241, no Electron needed)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build into dist/
 npm start            # build, then run the app
@@ -86,11 +110,24 @@ work on Wayland, in containers, or over most remote sessions — Wayland does no
 expose the focused window to other applications at all.
 
 On those systems OpenTime does not fail: it falls back to a **demo capture
-adapter** and seeds a fortnight of realistic history, so the app is fully usable
-and reviewable. A banner on the Today view says so explicitly, and Settings
-names the adapter in use. The demo data is generated through the *real*
-`SessionBuilder`, so only the window samples are synthetic — every line of
-categorisation, splitting and aggregation is the shipping code.
+adapter**, and — only when capture is genuinely unavailable — seeds a fortnight of
+realistic history so the app is usable and reviewable. That gate matters. Seeding
+synthetic days into a working install would put fiction in someone's real
+records; you can also switch seeding off in Settings and get an honest empty
+dashboard instead.
+
+Every synthetic row carries `source: 'demo'`, says so in the UI and in exports,
+and **Settings → Your data → Remove demo data** deletes exactly the seeded days
+plus any demo-adapter rows that landed in a real day. The demo data is generated
+through the *real* `SessionBuilder`, so only the window samples are synthetic —
+every line of categorisation, splitting and aggregation is the shipping code.
+
+**macOS needs Accessibility**, and its absence is not obvious: without it `x-win`
+still loads and still returns an app name while every window title comes back
+empty, so the app looks like it is working and records nothing useful. OpenTime
+checks the permission directly, says so on the Today view and in Settings, and
+`Check again` rebuilds the capture adapter in place — no restart after granting
+it.
 
 One detail worth knowing: the native module is probed **in a child process**.
 It is a Rust addon, and on an unsupported session it does not throw — it panics,
@@ -110,13 +147,19 @@ src/
     categorize.ts  rule precedence + productivity classification
     sessions.ts    SessionBuilder: samples in, batched sessions out
     aggregate.ts   every number the dashboard shows
+    edits.ts       split / merge / retime / manual entry / claim an away block
+    goals.ts       floors and ceilings on a slice of time
+    insights.ts    the few observations worth making out loud
+    export.ts      CSV and backup formats
     demo.ts        seeded generator for demo history and the demo adapter
-    defaults.ts    factory settings, projects, seed rules
+    defaults.ts    factory settings, projects, seed rules, settings validation
   main/          Electron main process
     main.ts        window, tray, IPC, boot
     tracker.ts     the active/idle polling state machine
     capture/       Capture interface + native and demo adapters
-    storage/       Storage interface + JSON implementation
+    storage/       Storage interface + the sharded, journalled file store
+    edits/         applying a correction to the store
+    export/        turning the store into a file's worth of bytes
     calendar/      Google OAuth wiring and Calendar REST client
   preload/       contextBridge surface (the only thing the renderer can reach)
   renderer/      React 18 + Vite
@@ -155,11 +198,12 @@ no speech models, no agent framework, no video sub-application. Runtime
 dependencies: **zero**, plus one optional native module for window capture.
 React and Vite are dev dependencies that compile away into a single bundle.
 
-**Writes are batched twice over.** `SessionBuilder` holds one session in memory
+**Writes are batched, and bounded.** `SessionBuilder` holds one session in memory
 and only emits when the category changes, a sampling gap opens, or the caller
-flushes — an hour of unbroken work is one write, not 720. `JsonStorage` then
-coalesces mutations into a single debounced atomic write. A test asserts that a
-full minute of polling persists nothing.
+flushes — an hour of unbroken work is one write, not 720. Those writes go to an
+append-only journal (a line each) and are checkpointed into per-day files on a
+debounce, so the cost of a write is a few kB regardless of how much history you
+have. A test asserts that a full minute of polling persists nothing.
 
 **Idle costs nothing.** When the OS reports idle, the sampling interval is torn
 down and replaced with a 30-second heartbeat that reads one integer. The capture
@@ -172,7 +216,7 @@ dashboard. Timeline geometry is precomputed as fractions by `buildTimeline`, so
 rendering is a multiply — no layout measurement, no `getBoundingClientRect`, no
 resize observers.
 
-**The bundle is one file.** ~187 kB of JS (~59 kB gzipped) and ~12 kB of CSS,
+**The bundle is one file.** ~223 kB of JS (~69 kB gzipped) and ~24 kB of CSS,
 no code splitting: this loads over `file://`, so there is no network waterfall
 to optimise and one file parses fastest. Main and preload are built separately
 with esbuild in ~10 ms, so a renderer change never rebuilds the main process.
@@ -182,37 +226,74 @@ tracking lives in the main process and does not need the window awake.
 
 ---
 
-## Storage, and the SQLite migration path
+## Storage
 
-v0 persists to a single JSON file in Electron's `userData` directory
-(`%APPDATA%/OpenTime` on Windows, `~/Library/Application Support/OpenTime` on
-macOS), written atomically via tmp-file + rename. A corrupt file is renamed
-aside rather than crash-looping the app at boot.
+Everything lives in one folder under Electron's `userData` directory
+(`%APPDATA%/OpenTime/opentime` on Windows, `~/Library/Application Support/OpenTime/opentime`
+on macOS):
 
-This is honest about its limits: the whole store is held in memory, which is
-right for one user's months of sessions and wrong for years of them.
+```
+opentime/
+  meta.json              settings, projects, rules, goals  (small, always in memory)
+  days/2026-08-03.json   one tracking day's sessions, idle blocks and events
+  journal.jsonl          append-only log of writes not yet checkpointed
+```
 
-The migration path is already in place, and it is why `Storage` looks the way it
-does:
+Plain JSON, readable without OpenTime, and yours to copy, sync or delete.
 
-| Concept | JSON today | SQLite later |
-|---|---|---|
-| `appendSessions` | push into a day-keyed array | `INSERT` into `sessions` |
-| `getSessions(day)` | array lookup | `SELECT … WHERE day_key = ?`, indexed |
-| `updateSession` | splice in place | `UPDATE … WHERE id = ?` |
-| `putEvents(day, …)` | replace array | `DELETE` + `INSERT` in one transaction |
-| settings / projects / rules | object fields | small key-value or typed tables |
+**Durability.** Every mutation is appended to `journal.jsonl` and awaited *before*
+the call returns. Day files are written on a debounce. If the machine loses power
+in between, `init()` replays the journal and the write is still there. Each
+journal record carries a monotonic sequence and each day file records the highest
+sequence already folded into it, so replay is idempotent — that is what makes
+"append now, checkpoint later" safe rather than a way to double-count sessions.
 
-Swapping in `better-sqlite3` means writing one new `Storage` implementation and
-changing one line in `main.ts`. Nothing in `Tracker`, the IPC layer or the
-renderer refers to the JSON shape. The interface deliberately never returns the
-whole `Record<string, Session[]>`, so a backend is free to answer per-day queries
-from disk. A one-time importer would read the JSON file and replay it through
-`appendSessions`.
+**A bounded write.** Persisting one session rewrites one day file of a few kB, not
+the whole history. The v0 store rewrote everything, so the cost of a write grew
+with the length of your history — exactly backwards.
 
-`better-sqlite3` was *not* adopted for v0 on purpose: it is a native module
-needing a per-Electron-ABI rebuild, and this prototype had to be reviewable on a
-machine where native modules do not load.
+**A bounded footprint.** Days are loaded on demand and evicted, so a year of data
+costs about the same memory as a week. Configuration stays resident because it is
+read on every tick and is tiny.
+
+**Failure is contained.** An unreadable `meta.json` costs your settings, not your
+history. An unreadable day costs that day. Both are renamed aside for forensics
+rather than crash-looping the app at boot.
+
+Upgrading from the v0 single-file store happens once at boot; the original file is
+renamed to `.migrated`, never deleted.
+
+That shape is why `Storage` splits its getters: configuration is synchronous
+because it is tiny and read constantly, while day records are asynchronous so a
+backend is free to answer them from disk. A SQLite implementation would slot in
+behind the same interface — it is no longer needed for durability or memory, only
+for indexed cross-day queries when a reporting view wants them.
+
+---
+
+## Your data
+
+**Export** (Settings → Your data):
+
+| Format | For |
+|---|---|
+| Sessions CSV | one row per session — a spreadsheet, or an invoice |
+| Daily CSV | one row per day — a quick chart of a quarter |
+| JSON backup | everything, restorable — history, settings, projects, rules, goals |
+
+CSV times are written in your local calendar rather than UTC, because an export
+that renders as UTC is an export that gets mis-added. Fields beginning `=`, `+`,
+`-` or `@` are prefixed with an apostrophe: window titles are attacker-influenced
+(any web page picks its own) and spreadsheets execute those on open.
+
+**Restore** validates the file, tells you how much history it holds, and asks
+before replacing anything. Backups taken from the v0 store still restore.
+
+**Retention** is optional and off by default. When on, days past the window are
+deleted from disk rather than hidden — a retention setting that only hides data is
+a lie about what is on disk. It is off by default because silently destroying
+someone's history to satisfy a default is not something a local-first app gets to
+do.
 
 ---
 
@@ -264,6 +345,10 @@ the demo history includes plausible meetings so the overlay is visible.
   on, so it is not done for other applications.
 - **Private apps.** Anything on the ignore list is never recorded, and any open
   session closes the moment it takes focus.
+- **Private subjects.** A client name, a matter number, a health portal — any
+  window whose title or host contains one of your keywords is never recorded, in
+  *any* application. Applications are the wrong unit for confidentiality; the
+  subject is the right one.
 - **No telemetry, no analytics, no network calls** other than to Google's own
   OAuth and Calendar endpoints, and only after you connect an account.
 - **OpenTime never tracks itself.**
@@ -307,44 +392,55 @@ Notes for a real release:
 npm test
 ```
 
-111 tests, node environment, no Electron and no display required:
+241 tests, node environment, no Electron and no display required:
 
 | Suite | Covers |
 |---|---|
 | `day.test.ts` | day-key bucketing, boundary rollover, local-vs-UTC correctness, ranges |
-| `categorize.test.ts` | rule precedence, URL host reduction, productivity classification, ignore list |
+| `categorize.test.ts` | rule precedence, URL host reduction, productivity classification, private apps and subjects |
 | `sessions.test.ts` | session batching, gap splitting, day-boundary splitting, noise rejection, live rule changes |
 | `aggregate.test.ts` | daily/weekly rollups, focus runs, focus-score properties, timeline geometry |
-| `storage.test.ts` | persistence, ordering, corrupt-file recovery, migration of older state |
-| `tracker.test.ts` | the full active/idle state machine with an injected clock and fake capture |
-| `calendar.test.ts` | OAuth URL construction, refresh margin, event mapping, revoked grants |
+| `storage.test.ts` | sharding, journal crash recovery, idempotent replay, corrupt-file containment, cache eviction, v0 migration, retention, restore |
+| `tracker.test.ts` | the full active/idle state machine with an injected clock and fake capture, timed pause, adapter swap, drain-before-quit |
+| `edits.test.ts` | split/merge/retime/manual/claim arithmetic and every rejection case |
+| `main-edits.test.ts` | corrections and exports end to end against a real store |
+| `export.test.ts` | CSV escaping and formula-injection defence, backup round-trip, hostile and v1 backups |
+| `goals.test.ts` | floors, ceilings, pacing, weekly windows, sanitisation |
+| `insights.test.ts` | hourly attribution, peak window, and the conditions under which each insight fires |
+| `settings.test.ts` | validation of every settings value that could wedge the engine |
+| `calendar.test.ts` | OAuth URL construction, refresh margin, event mapping, revoked grants, network and malformed-response failures |
 | `demo.test.ts` | the demo generator produces real, non-overlapping, deterministic days |
 
 The tracker tests drive the engine at its real polling cadence rather than in
 one jump — ticking in a single leap would look like a sampling gap and split the
 session, which is correct behaviour but not what those tests are checking.
+Storage writes are asynchronous and durable, so those tests await `tracker.drain()`
+before asserting: the same ordering the app uses on quit.
 
 ---
 
-## What v0 does not do yet
+## What is not built yet
 
-Honest list of what a production release still needs:
+Honest list of what a production release still needs. The full account, including
+what was left out on purpose and what should be reworked, is in
+[`docs/feature-inventory.md`](docs/feature-inventory.md).
 
-- **SQLite backend.** Interface is ready; implementation is not written.
-- **Auto-update.** No update feed.
+- **Month and custom-range views.** Storage and export already handle arbitrary
+  ranges; only the view is missing. Largest remaining gap.
+- **Auto-update.** No update feed. The natural choice is `electron-updater`
+  against public GitHub Releases; shipping a feed only the author can publish to
+  would be worse than shipping none.
 - **Codesigning and notarisation.** Required before macOS distribution.
-- **macOS Accessibility permission flow.** Needs a request-and-explain screen.
-- **Data export.** No CSV/JSON export, and no retention or pruning policy.
-- **Deeper history.** The UI shows today and a trailing week; monthly and
-  arbitrary-range views are not built (the storage interface supports them).
-- **Idle attribution.** Away blocks are recorded but cannot yet be assigned to
-  an activity after the fact ("I was in a meeting").
-- **Onboarding.** No first-run tour; the defaults are the entire onboarding.
-- **Accessibility audit.** Keyboard navigation and focus order are reasonable
-  but unaudited; there is no light theme, though the CSS is fully tokenised for
-  one.
-- **Long-run soak test.** The engine is designed for a fixed memory ceiling but
-  has not been run for days on real hardware.
+- **Calendar write-back.** Read-only today; the scope is already selectable.
+- **SQLite backend.** No longer needed for durability or memory — the sharded,
+  journalled store fixed both. It would buy indexed cross-day queries, worth doing
+  when a reporting view needs them.
+- **Light theme.** The CSS is fully tokenised for one; nobody has picked values.
+- **Accessibility audit.** Keyboard navigation and focus order are reasonable but
+  unaudited.
+- **Long-run soak test.** The engine is designed for a fixed memory ceiling and
+  the store now has a bounded footprint, but neither has been run for days on real
+  hardware.
 
 ![Settings](docs/screenshots/settings.png)
 

@@ -13,8 +13,15 @@
  */
 
 import { dayKey, nextDayBoundary, DEFAULT_DAY_START_HOUR } from './day'
-import { classifyProductivity, isIgnored, resolveCategory } from './categorize'
-import type { CategoryRule, IdleBlock, Project, Session, WindowSample } from './types'
+import { classifyProductivity, isPrivateSample, resolveCategory } from './categorize'
+import type {
+  CategoryRule,
+  IdleBlock,
+  Project,
+  Session,
+  SessionSource,
+  WindowSample,
+} from './types'
 
 /** Sessions shorter than this are sampling noise and are discarded. */
 export const MIN_SESSION_SECONDS = 3
@@ -23,8 +30,12 @@ export interface SessionBuilderOptions {
   sessionGapSeconds: number
   dayStartHour: number
   ignoredApps: string[]
+  /** Titles/hosts containing any of these are never recorded. */
+  ignoredTitleKeywords?: string[]
   rules: CategoryRule[]
   projects: Project[]
+  /** Stamped onto every emitted session; 'capture' unless the demo generator says otherwise. */
+  source?: SessionSource
   /** Injected so tests get stable ids; defaults to a time+counter id. */
   makeId?: () => string
 }
@@ -69,7 +80,11 @@ export class SessionBuilder {
    */
   sample(sample: WindowSample, now: number): Session[] {
     if (!sample || !sample.app) return this.flush(now)
-    if (isIgnored(sample.app, this.opts.ignoredApps)) return this.flush(now)
+    // A private app or subject closes the open session immediately: the time is
+    // dropped, never merged into whatever the user was doing before.
+    if (isPrivateSample(sample, this.opts.ignoredApps, this.opts.ignoredTitleKeywords)) {
+      return this.flush(now)
+    }
 
     const resolution = resolveCategory(sample, this.opts.rules, this.opts.projects)
     const url = sample.url || ''
@@ -139,6 +154,7 @@ export class SessionBuilder {
       startTime: seg.start,
       endTime: seg.end,
       durationSeconds: Math.round((seg.end - seg.start) / 1000),
+      source: this.opts.source || 'capture',
     }))
   }
 }

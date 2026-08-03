@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from '../src/core/defaults'
 import {
   bucketEvents,
   buildAuthUrl,
+  exchangeCode,
   fetchEvents,
   mapGoogleEvent,
   needsRefresh,
@@ -133,6 +134,60 @@ describe('fetchEvents', () => {
   it('surfaces an API failure', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 403 }) as unknown as typeof fetch
     await expect(fetchEvents('t', 0, 1, fetchImpl)).rejects.toThrow(/403/)
+  })
+
+  it('propagates a network failure rather than reporting an empty calendar', async () => {
+    // An offline laptop must show "sync failed", not "you have no meetings" —
+    // silently returning nothing would erase the overlay for the whole week.
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND')) as unknown as typeof fetch
+    await expect(fetchEvents('t', 0, 1, fetchImpl)).rejects.toThrow(/ENOTFOUND/)
+  })
+
+  it('tolerates a response with no items at all', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    }) as unknown as typeof fetch
+    await expect(fetchEvents('t', 0, 1, fetchImpl)).resolves.toEqual([])
+  })
+
+  it('fails loudly on a body that is not JSON', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError('Unexpected token <')
+      },
+    }) as unknown as typeof fetch
+    await expect(fetchEvents('t', 0, 1, fetchImpl)).rejects.toThrow(SyntaxError)
+  })
+})
+
+describe('exchangeCode', () => {
+  it('returns a token set on success', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'a', refresh_token: 'r', expires_in: 3600 }),
+    }) as unknown as typeof fetch
+    const tokens = await exchangeCode(calendar, 'code123', fetchImpl)
+    expect(tokens).toMatchObject({ accessToken: 'a', refreshToken: 'r' })
+    expect(tokens.expiresAt).toBeGreaterThan(Date.now())
+  })
+
+  it('reports a rejected authorization code', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 400 }) as unknown as typeof fetch
+    await expect(exchangeCode(calendar, 'stale-code', fetchImpl)).rejects.toThrow(/400/)
+  })
+
+  it('survives a grant that comes back with no refresh token', async () => {
+    // Google omits `refresh_token` when the user has already granted consent
+    // and `prompt=consent` did not force a new one.
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'a', expires_in: 3600 }),
+    }) as unknown as typeof fetch
+    await expect(exchangeCode(calendar, 'code', fetchImpl)).resolves.toMatchObject({
+      refreshToken: '',
+    })
   })
 })
 

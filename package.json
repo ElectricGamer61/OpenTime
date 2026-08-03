@@ -1,7 +1,7 @@
 {
   "name": "opentime",
   "productName": "OpenTime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenTime — a lean, local-first automatic time tracker for Windows and macOS.",
   "private": true,
   "license": "MIT",

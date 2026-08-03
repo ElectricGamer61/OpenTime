@@ -13,28 +13,45 @@ import path from 'node:path'
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   Notification,
   powerMonitor,
   shell,
+  systemPreferences,
   Tray,
   nativeImage,
 } from 'electron'
 
-import { dayKey, lastNDayKeys } from '../core/day'
+import { dayKey, lastNDayKeys, parseYmdLocal, formatYmdLocal } from '../core/day'
 import { generateDemoDay } from '../core/demo'
+import { exportFilename, parseBackup } from '../core/export'
+import { sanitizeGoal } from '../core/goals'
 import type {
   CalendarEvent,
   CategoryRule,
+  Goal,
   Project,
   Session,
   Settings,
   TrackerStatus,
 } from '../core/types'
 import { CHANNELS } from '../shared/ipc'
-import type { Bootstrap, CalendarResult, DayPayload, RecategorizeRequest } from '../shared/ipc'
-import { createCapture } from './capture'
+import type {
+  Bootstrap,
+  CalendarResult,
+  CaptureHealth,
+  DayPayload,
+  EditResult,
+  ExportRequest,
+  ExportResult,
+  RecategorizeRequest,
+  SessionEdit,
+} from '../shared/ipc'
+import { createCapture, type Capture } from './capture'
+import { applyEdit } from './edits/applyEdit'
+import { buildExportPayload, FORMAT_SPEC, resolveRange } from './export/buildExport'
 import {
   bucketEvents,
   buildAuthUrl,
@@ -46,16 +63,17 @@ import {
   REDIRECT_URI,
   type TokenSet,
 } from './calendar/google'
-import { JsonStorage } from './storage/JsonStorage'
+import { FileStorage } from './storage/FileStorage'
 import { Tracker } from './tracker'
 
 const DEV_SERVER_URL = process.env.OPENTIME_DEV_SERVER_URL
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-let storage: JsonStorage
+let storage: FileStorage
 let tracker: Tracker
-let captureNotice: string | undefined
+let capture: Capture
+let captureHealth: CaptureHealth
 let tokens: TokenSet | null = null
 
 const tokenFile = () => path.join(app.getPath('userData'), 'opentime-google-tokens.json')
@@ -117,56 +135,99 @@ function trayIcon(): Electron.NativeImage {
   )
 }
 
+/**
+ * The tray menu is the app's real front door — most days it is the only part
+ * anyone touches. Timed pauses live here rather than only in the window,
+ * because "stop tracking for an hour" is a decision made while doing something
+ * else entirely.
+ */
 function buildTrayMenu(): void {
   if (!tray) return
   const status = tracker.status
+  const pauseFor = (minutes: number) => ({
+    label: `${minutes} minutes`,
+    click: () => {
+      tracker.pause(minutes)
+      buildTrayMenu()
+    },
+  })
+
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open OpenTime', click: showWindow },
       { type: 'separator' },
-      {
-        label: status.paused ? 'Resume tracking' : 'Pause tracking',
-        click: () => {
-          if (status.paused) tracker.resume()
-          else tracker.pause()
-        },
-      },
+      status.paused
+        ? { label: 'Resume tracking', click: () => { tracker.resume(); buildTrayMenu() } }
+        : {
+            label: 'Pause tracking',
+            submenu: [
+              ...[15, 30, 60].map(pauseFor),
+              { type: 'separator' as const },
+              {
+                label: 'Until I resume',
+                click: () => {
+                  tracker.pause()
+                  buildTrayMenu()
+                },
+              },
+            ],
+          },
       { label: `Capture: ${status.captureAdapter}`, enabled: false },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() },
     ])
   )
-  tray.setToolTip(status.paused ? 'OpenTime — paused' : 'OpenTime — tracking')
+
+  const until = status.pausedUntil
+    ? ` until ${new Date(status.pausedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : ''
+  tray.setToolTip(status.paused ? `OpenTime — paused${until}` : 'OpenTime — tracking')
 }
 
 // ── Data helpers ─────────────────────────────────────────────────────────────
 
-function dayPayload(key: string): DayPayload {
-  return {
-    dayKey: key,
-    sessions: storage.getSessions(key),
-    idle: storage.getIdle(key),
-    events: storage.getEvents(key),
-  }
+async function dayPayload(key: string): Promise<DayPayload> {
+  const record = await storage.getDay(key)
+  return { dayKey: key, ...record }
 }
 
 function todayKey(): string {
   return dayKey(Date.now(), storage.getSettings().dayStartHour)
 }
 
+/**
+ * Push to the renderer, if there is still a renderer.
+ *
+ * Three guards, all earned during shutdown: the window can be gone, its
+ * `webContents` can be destroyed while the window object is not, and the render
+ * *frame* can be disposed a moment before either — which makes `send` throw. The
+ * final flush on quit runs through here, and a failed notification must never be
+ * the reason a session does not reach disk.
+ */
 function broadcast(channel: string, payload?: unknown): void {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.webContents.isDestroyed()) return
+  try {
+    mainWindow.webContents.send(channel, payload)
+  } catch {
+    // The renderer went away between the check and the send. Nothing to do.
+  }
 }
 
 /**
- * First-run seeding. When there is no history at all, backfill a fortnight of
- * realistic demo days so the dashboard is immediately meaningful — and so the
- * app is reviewable on a machine where OS capture cannot run. Real capture,
- * once it works, simply appends to the same store.
+ * First-run seeding, and the one place this app is allowed to invent data.
+ *
+ * Two rules make it honest. It only runs when real capture is *unavailable*, so
+ * a working install never mixes fiction into a real history; and every seeded
+ * day is recorded in the store so "Clear demo data" can remove exactly those
+ * days and nothing else. A user who would rather see an empty dashboard turns
+ * `seedDemoWhenUnavailable` off and gets one.
  */
-async function seedDemoHistoryIfEmpty(): Promise<void> {
-  if (!storage.isEmpty()) return
+async function seedDemoHistoryIfNeeded(): Promise<void> {
   const settings = storage.getSettings()
+  if (!captureHealth.demo || !settings.seedDemoWhenUnavailable) return
+  if (!storage.isEmpty()) return
+
   const projects = storage.getProjects()
   const rules = storage.getRules()
   const keys = lastNDayKeys(14, todayKey())
@@ -181,7 +242,61 @@ async function seedDemoHistoryIfEmpty(): Promise<void> {
     for (const block of day.idle) await storage.appendIdle(key, block)
     if (day.events.length) await storage.putEvents(key, day.events)
   }
+  await storage.markDemoDays(keys)
   await storage.flush()
+}
+
+/**
+ * Apply the retention policy.
+ *
+ * Off by default. When on, days older than the window are deleted outright —
+ * a retention setting that only hides data is a lie about what is on disk.
+ */
+async function applyRetention(): Promise<number> {
+  const days = storage.getSettings().retentionDays
+  if (!days) return 0
+  const cutoff = parseYmdLocal(todayKey())
+  cutoff.setDate(cutoff.getDate() - days)
+  const removed = await storage.prune(formatYmdLocal(cutoff))
+  if (removed.length) console.log(`[storage] retention removed ${removed.length} day(s)`)
+  return removed.length
+}
+
+function macAccessibilityTrusted(): boolean | undefined {
+  if (process.platform !== 'darwin') return undefined
+  try {
+    // `false` means "check, don't prompt" — the prompt belongs to onboarding,
+    // not to every boot.
+    return systemPreferences.isTrustedAccessibilityClient(false)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * (Re)build the capture adapter and publish its health.
+ *
+ * Exposed as an action because the two things that fix a fallback — granting
+ * macOS Accessibility, installing the native module — happen while the app is
+ * already running, and making someone restart to pick that up is a bad first
+ * five minutes.
+ */
+function initCapture(): CaptureHealth {
+  const settings = storage.getSettings()
+  const trusted = macAccessibilityTrusted()
+  const probe = createCapture(settings.captureMode, process.execPath, {
+    macAccessibilityTrusted: trusted,
+  })
+  capture?.dispose?.()
+  capture = probe.capture
+  captureHealth = {
+    adapter: probe.capture.name,
+    demo: probe.capture.demo,
+    notice: probe.reason,
+    remedy: probe.remedy,
+    accessibilityTrusted: trusted,
+  }
+  return captureHealth
 }
 
 // ── Calendar ─────────────────────────────────────────────────────────────────
@@ -301,7 +416,12 @@ async function syncCalendar(): Promise<CalendarResult> {
     end.setDate(end.getDate() + 2)
     const events = await fetchEvents(token, start.getTime(), end.getTime())
     const buckets = bucketEvents(events, settings.dayStartHour)
-    for (const key of keys) await storage.putEvents(key, buckets[key] || [])
+    for (const key of keys) {
+      // Manual entries are the user's own record and must survive a sync that
+      // replaces everything Google knows about the day.
+      const manual = (await storage.getEvents(key)).filter((e) => e.source === 'manual')
+      await storage.putEvents(key, [...manual, ...(buckets[key] || [])].sort((a, b) => a.start - b.start))
+    }
     await storage.saveSettings({
       ...settings,
       calendar: { ...settings.calendar, connected: true, lastSyncedAt: Date.now() },
@@ -313,46 +433,151 @@ async function syncCalendar(): Promise<CalendarResult> {
   }
 }
 
+// ── Export ───────────────────────────────────────────────────────────────────
+
+async function exportData(request: ExportRequest): Promise<ExportResult> {
+  if (!resolveRange(storage, request).length) {
+    return { ok: false, message: 'There is no history to export yet.' }
+  }
+
+  const now = Date.now()
+  const spec = FORMAT_SPEC[request.format]
+  const chosen = await dialog.showSaveDialog({
+    title: 'Export OpenTime data',
+    defaultPath: exportFilename(spec.prefix, spec.ext, now),
+    filters: [{ name: spec.filterName, extensions: [spec.ext] }],
+  })
+  if (chosen.canceled || !chosen.filePath) return { ok: false, message: 'Export cancelled.' }
+
+  const payload = await buildExportPayload(storage, request, {
+    exportedAt: now,
+    appVersion: app.getVersion(),
+  })
+
+  try {
+    await fs.writeFile(chosen.filePath, payload.contents, 'utf8')
+  } catch (err) {
+    return { ok: false, message: `Could not write the file: ${(err as Error).message}` }
+  }
+
+  return {
+    ok: true,
+    message: `Exported ${payload.count} ${payload.unit} to ${path.basename(chosen.filePath)}.`,
+    path: chosen.filePath,
+    count: payload.count,
+  }
+}
+
+/**
+ * Restore from a backup.
+ *
+ * Destructive, so it asks first, in a dialog that states plainly what is about
+ * to be replaced. Tracking stops for the duration: writing new sessions into a
+ * store that is being swapped underneath would be a race with someone's history
+ * as the stake.
+ */
+async function importBackup(): Promise<ExportResult> {
+  const chosen = await dialog.showOpenDialog({
+    title: 'Restore an OpenTime backup',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    properties: ['openFile'],
+  })
+  if (chosen.canceled || !chosen.filePaths.length) return { ok: false, message: 'Restore cancelled.' }
+
+  let backup
+  try {
+    backup = parseBackup(await fs.readFile(chosen.filePaths[0], 'utf8'))
+  } catch (err) {
+    return { ok: false, message: (err as Error).message }
+  }
+
+  const dayCount = Object.keys(backup.days).length
+  const confirm = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['Replace my data', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Restore backup',
+    message: `Replace everything with this backup?`,
+    detail:
+      `The backup holds ${dayCount} day(s) of history, plus its own settings, projects and rules.\n\n` +
+      'Your current history will be deleted. Export it first if you want to keep it.',
+  })
+  if (confirm.response !== 0) return { ok: false, message: 'Restore cancelled.' }
+
+  const wasRunning = tracker.status.running
+  tracker.stop()
+  // `stop()` starts the final write; draining it before the swap is what stops
+  // a session landing in the store a moment after the restore cleared it.
+  await tracker.drain()
+  await storage.replaceAll(backup.config, backup.days)
+  tracker.reconfigure(storage.getSettings(), storage.getProjects(), storage.getRules())
+  if (wasRunning) tracker.start()
+  broadcast(CHANNELS.dataEvent)
+  return { ok: true, message: `Restored ${dayCount} day(s) from the backup.`, count: dayCount }
+}
+
 // ── IPC ──────────────────────────────────────────────────────────────────────
 
 function registerIpc(): void {
-  ipcMain.handle(CHANNELS.getBootstrap, (): Bootstrap => {
+  ipcMain.handle(CHANNELS.getBootstrap, async (): Promise<Bootstrap> => {
     const key = todayKey()
+    const settings = storage.getSettings()
     return {
-      settings: storage.getSettings(),
+      settings,
       projects: storage.getProjects(),
       rules: storage.getRules(),
+      goals: storage.getGoals(),
       status: tracker.status,
-      today: dayPayload(key),
+      today: await dayPayload(key),
       weekKeys: lastNDayKeys(7, key),
+      historyKeys: storage.listDayKeys(),
       appVersion: app.getVersion(),
       platform: process.platform,
-      captureNotice,
+      dataDirectory: storage.dataDirectory,
+      capture: captureHealth,
+      captureNotice: captureHealth.demo ? captureHealth.notice : undefined,
+      firstRun: !settings.onboardedAt,
+      demoDays: storage.demoDays(),
     }
   })
 
-  ipcMain.handle(CHANNELS.getDay, (_e, key: string): DayPayload => dayPayload(key))
+  ipcMain.handle(CHANNELS.getDay, (_e, key: string): Promise<DayPayload> => dayPayload(key))
 
-  ipcMain.handle(CHANNELS.getRange, (_e, keys: string[]): DayPayload[] =>
-    keys.map((k) => dayPayload(k))
-  )
+  ipcMain.handle(CHANNELS.getRange, async (_e, keys: string[]): Promise<DayPayload[]> => {
+    const out: DayPayload[] = []
+    for (const key of keys) out.push(await dayPayload(key))
+    return out
+  })
 
   ipcMain.handle(CHANNELS.getStatus, (): TrackerStatus => tracker.status)
 
-  ipcMain.handle(CHANNELS.setTracking, (_e, action: string): TrackerStatus => {
-    if (action === 'start') tracker.start()
-    else if (action === 'pause') tracker.pause()
-    else if (action === 'resume') tracker.resume()
-    else if (action === 'stop') tracker.stop()
-    buildTrayMenu()
-    return tracker.status
-  })
+  ipcMain.handle(
+    CHANNELS.setTracking,
+    (_e, action: string, minutes?: number): TrackerStatus => {
+      if (action === 'start') tracker.start()
+      else if (action === 'pause') tracker.pause(minutes)
+      else if (action === 'resume') tracker.resume()
+      else if (action === 'stop') tracker.stop()
+      buildTrayMenu()
+      return tracker.status
+    }
+  )
 
   ipcMain.handle(CHANNELS.saveSettings, async (_e, settings: Settings): Promise<Settings> => {
+    const before = storage.getSettings()
     await storage.saveSettings(settings)
-    tracker.reconfigure(settings, storage.getProjects(), storage.getRules())
-    app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin })
-    return storage.getSettings()
+    const saved = storage.getSettings()
+    tracker.reconfigure(saved, storage.getProjects(), storage.getRules())
+    app.setLoginItemSettings({ openAtLogin: saved.launchAtLogin })
+    // A changed capture mode should take effect now, not at the next launch.
+    if (saved.captureMode !== before.captureMode) {
+      initCapture()
+      tracker.setCapture(capture)
+    }
+    if (saved.retentionDays !== before.retentionDays) await applyRetention()
+    broadcast(CHANNELS.dataEvent)
+    return saved
   })
 
   ipcMain.handle(CHANNELS.saveProjects, async (_e, projects: Project[]): Promise<Project[]> => {
@@ -367,11 +592,17 @@ function registerIpc(): void {
     return storage.getRules()
   })
 
+  ipcMain.handle(CHANNELS.saveGoals, async (_e, goals: Goal[]): Promise<Goal[]> => {
+    await storage.saveGoals((goals || []).map((g, i) => sanitizeGoal(g, `g_${i}`)))
+    return storage.getGoals()
+  })
+
   ipcMain.handle(
     CHANNELS.recategorize,
     async (_e, req: RecategorizeRequest): Promise<DayPayload> => {
-      const patch: Partial<Session> = { category: req.category }
+      const patch: Partial<Session> = { category: req.category, edited: true }
       if (req.productivity) patch.productivity = req.productivity
+      if (req.note !== undefined) patch.note = req.note || undefined
       const project = storage.getProjects().find((p) => p.name === req.category)
       if (project) patch.projectId = project.id
       const updated = await storage.updateSession(req.dayKey, req.sessionId, patch)
@@ -399,6 +630,17 @@ function registerIpc(): void {
     }
   )
 
+  ipcMain.handle(CHANNELS.editSession, async (_e, edit: SessionEdit): Promise<EditResult> => {
+    try {
+      const outcome = await applyEdit(storage, edit)
+      if (outcome.ok) broadcast(CHANNELS.dataEvent)
+      return outcome
+    } catch (err) {
+      console.error('[main] session edit failed:', err)
+      return { ok: false, message: 'That edit could not be applied.' }
+    }
+  })
+
   ipcMain.handle(
     CHANNELS.addManualEvent,
     async (_e, input: Omit<CalendarEvent, 'id' | 'source'>): Promise<DayPayload> => {
@@ -408,7 +650,7 @@ function registerIpc(): void {
         id: `manual_${Date.now().toString(36)}`,
         source: 'manual',
       }
-      const next = [...storage.getEvents(key), event].sort((a, b) => a.start - b.start)
+      const next = [...(await storage.getEvents(key)), event].sort((a, b) => a.start - b.start)
       await storage.putEvents(key, next)
       broadcast(CHANNELS.dataEvent)
       return dayPayload(key)
@@ -435,6 +677,49 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CHANNELS.syncCalendar, (): Promise<CalendarResult> => syncCalendar())
+
+  ipcMain.handle(CHANNELS.exportData, async (_e, request: ExportRequest): Promise<ExportResult> => {
+    try {
+      await storage.flush()
+      return await exportData(request)
+    } catch (err) {
+      return { ok: false, message: `Export failed: ${(err as Error).message}` }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.importBackup, async (): Promise<ExportResult> => {
+    try {
+      return await importBackup()
+    } catch (err) {
+      return { ok: false, message: `Restore failed: ${(err as Error).message}` }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.revealDataFolder, async (): Promise<void> => {
+    await storage.flush()
+    await shell.openPath(storage.dataDirectory)
+  })
+
+  ipcMain.handle(CHANNELS.clearDemoData, async (): Promise<ExportResult> => {
+    const removed = await storage.clearDemoDays()
+    broadcast(CHANNELS.dataEvent)
+    return removed
+      ? { ok: true, message: `Removed ${removed} day(s) of demo history.`, count: removed }
+      : { ok: false, message: 'There is no demo history to remove.' }
+  })
+
+  ipcMain.handle(CHANNELS.reloadCapture, (): CaptureHealth => {
+    const health = initCapture()
+    tracker.setCapture(capture)
+    buildTrayMenu()
+    broadcast(CHANNELS.statusEvent, tracker.status)
+    return health
+  })
+
+  ipcMain.handle(CHANNELS.completeOnboarding, async (): Promise<Settings> => {
+    await storage.saveSettings({ ...storage.getSettings(), onboardedAt: Date.now() })
+    return storage.getSettings()
+  })
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
@@ -445,18 +730,22 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', showWindow)
 
   void app.whenReady().then(async () => {
-    storage = new JsonStorage(app.getPath('userData'))
+    // Notifications on Windows attribute to an AppUserModelID; without one they
+    // arrive from "electron.app.OpenTime" and cannot be configured by the user.
+    if (process.platform === 'win32') app.setAppUserModelId('app.opentime.desktop')
+
+    storage = new FileStorage(app.getPath('userData'))
     await storage.init()
     await loadTokens()
-    await seedDemoHistoryIfEmpty()
+    initCapture()
+    await seedDemoHistoryIfNeeded()
+    await applyRetention()
 
     const settings = storage.getSettings()
-    const probe = createCapture(settings.captureMode, process.execPath)
-    captureNotice = probe.reason
 
     tracker = new Tracker(
       {
-        capture: probe.capture,
+        capture,
         storage,
         getIdleSeconds: () => powerMonitor.getSystemIdleTime(),
         onChange: (status) => {
@@ -507,11 +796,17 @@ if (!app.requestSingleInstanceLock()) {
     if (!tray && process.platform !== 'darwin') app.quit()
   })
 
-  app.on('before-quit', async (event) => {
-    if (!storage) return
+  let quitting = false
+  app.on('before-quit', (event) => {
+    if (!storage || quitting) return
+    quitting = true
     event.preventDefault()
     tracker?.stop()
-    await storage.flush()
-    app.exit(0)
+    // Drain before flushing: `stop()` starts the final write, and flushing a
+    // store the last session has not reached yet would lose it.
+    void Promise.resolve(tracker?.drain())
+      .then(() => storage.flush())
+      .catch((err) => console.error('[main] final flush failed:', err))
+      .finally(() => app.exit(0))
   })
 }

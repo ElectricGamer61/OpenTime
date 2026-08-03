@@ -11,8 +11,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { dayKey, lastNDayKeys } from '../../core/day'
-import type { CalendarEvent, CategoryRule, Project, Settings, TrackerStatus } from '../../core/types'
-import type { Bootstrap, CalendarResult, DayPayload, RecategorizeRequest } from '../../shared/ipc'
+import type {
+  CalendarEvent,
+  CategoryRule,
+  Goal,
+  Project,
+  Settings,
+  TrackerStatus,
+} from '../../core/types'
+import type {
+  Bootstrap,
+  CalendarResult,
+  CaptureHealth,
+  DayPayload,
+  EditResult,
+  ExportRequest,
+  ExportResult,
+  RecategorizeRequest,
+  SessionEdit,
+} from '../../shared/ipc'
 import { client } from './client'
 
 export interface OpenTimeState {
@@ -20,25 +37,40 @@ export interface OpenTimeState {
   settings: Settings | null
   projects: Project[]
   rules: CategoryRule[]
+  goals: Goal[]
   status: TrackerStatus | null
   selectedDay: string
   day: DayPayload | null
   week: DayPayload[]
   weekKeys: string[]
+  historyKeys: string[]
   appVersion: string
   platform: string
+  dataDirectory: string
+  capture: CaptureHealth | null
   captureNotice?: string
+  firstRun: boolean
+  demoDays: string[]
   selectDay(key: string): void
   refresh(): Promise<void>
-  setTracking(action: 'start' | 'pause' | 'resume' | 'stop'): Promise<void>
+  reload(): Promise<void>
+  setTracking(action: 'start' | 'pause' | 'resume' | 'stop', minutes?: number): Promise<void>
   saveSettings(settings: Settings): Promise<void>
   saveProjects(projects: Project[]): Promise<void>
   saveRules(rules: CategoryRule[]): Promise<void>
+  saveGoals(goals: Goal[]): Promise<void>
   recategorize(request: RecategorizeRequest): Promise<void>
+  editSession(edit: SessionEdit): Promise<EditResult>
   addManualEvent(event: Omit<CalendarEvent, 'id' | 'source'>): Promise<void>
   connectCalendar(): Promise<CalendarResult>
   disconnectCalendar(): Promise<CalendarResult>
   syncCalendar(): Promise<CalendarResult>
+  exportData(request: ExportRequest): Promise<ExportResult>
+  importBackup(): Promise<ExportResult>
+  revealDataFolder(): Promise<void>
+  clearDemoData(): Promise<ExportResult>
+  reloadCapture(): Promise<CaptureHealth>
+  completeOnboarding(): Promise<void>
 }
 
 export function useOpenTime(): OpenTimeState {
@@ -105,9 +137,21 @@ export function useOpenTime(): OpenTimeState {
     await loadDays(selectedRef.current, weekKeys)
   }, [loadDays, weekKeys])
 
+  /** Re-read everything, for actions that can change the whole store. */
+  const reload = useCallback(async () => {
+    const bootstrap = await api.getBootstrap()
+    setBoot(bootstrap)
+    setStatus(bootstrap.status)
+    const key = dayKey(Date.now(), bootstrap.settings.dayStartHour)
+    setSelectedDay(key)
+    setWeekKeys(bootstrap.weekKeys)
+    setDay(bootstrap.today)
+    setWeek(await api.getRange(bootstrap.weekKeys))
+  }, [api])
+
   const setTracking = useCallback(
-    async (action: 'start' | 'pause' | 'resume' | 'stop') => {
-      setStatus(await api.setTracking(action))
+    async (action: 'start' | 'pause' | 'resume' | 'stop', minutes?: number) => {
+      setStatus(await api.setTracking(action, minutes))
     },
     [api]
   )
@@ -141,10 +185,30 @@ export function useOpenTime(): OpenTimeState {
     [api]
   )
 
+  const saveGoals = useCallback(
+    async (next: Goal[]) => {
+      const saved = await api.saveGoals(next)
+      setBoot((prev) => (prev ? { ...prev, goals: saved } : prev))
+    },
+    [api]
+  )
+
   const recategorize = useCallback(
     async (request: RecategorizeRequest) => {
       setDay(await api.recategorize(request))
       if (weekKeys.length) setWeek(await api.getRange(weekKeys))
+    },
+    [api, weekKeys]
+  )
+
+  const editSession = useCallback(
+    async (edit: SessionEdit) => {
+      const result = await api.editSession(edit)
+      if (result.ok && result.day) {
+        setDay(result.day)
+        if (weekKeys.length) setWeek(await api.getRange(weekKeys))
+      }
+      return result
     },
     [api, weekKeys]
   )
@@ -175,31 +239,73 @@ export function useOpenTime(): OpenTimeState {
     return result
   }, [api, refresh])
 
+  const exportData = useCallback((request: ExportRequest) => api.exportData(request), [api])
+
+  const importBackup = useCallback(async () => {
+    const result = await api.importBackup()
+    if (result.ok) await reload()
+    return result
+  }, [api, reload])
+
+  const revealDataFolder = useCallback(() => api.revealDataFolder(), [api])
+
+  const clearDemoData = useCallback(async () => {
+    const result = await api.clearDemoData()
+    if (result.ok) await reload()
+    return result
+  }, [api, reload])
+
+  const reloadCapture = useCallback(async () => {
+    const health = await api.reloadCapture()
+    await reload()
+    return health
+  }, [api, reload])
+
+  const completeOnboarding = useCallback(async () => {
+    const saved = await api.completeOnboarding()
+    setBoot((prev) => (prev ? { ...prev, settings: saved, firstRun: false } : prev))
+  }, [api])
+
   return useMemo(
     () => ({
       ready: !!boot && !!day,
       settings: boot?.settings ?? null,
       projects: boot?.projects ?? [],
       rules: boot?.rules ?? [],
+      goals: boot?.goals ?? [],
       status,
       selectedDay,
       day,
       week,
       weekKeys,
+      historyKeys: boot?.historyKeys ?? [],
       appVersion: boot?.appVersion ?? '',
       platform: boot?.platform ?? '',
+      dataDirectory: boot?.dataDirectory ?? '',
+      capture: boot?.capture ?? null,
       captureNotice: boot?.captureNotice,
+      firstRun: boot?.firstRun ?? false,
+      demoDays: boot?.demoDays ?? [],
       selectDay,
       refresh,
+      reload,
       setTracking,
       saveSettings,
       saveProjects,
       saveRules,
+      saveGoals,
       recategorize,
+      editSession,
       addManualEvent,
       connectCalendar,
       disconnectCalendar,
       syncCalendar,
+      exportData,
+      importBackup,
+      revealDataFolder,
+      clearDemoData,
+      reloadCapture,
+      completeOnboarding,
     }),
     [
       boot,
@@ -210,15 +316,24 @@ export function useOpenTime(): OpenTimeState {
       selectedDay,
       selectDay,
       refresh,
+      reload,
       setTracking,
       saveSettings,
       saveProjects,
       saveRules,
+      saveGoals,
       recategorize,
+      editSession,
       addManualEvent,
       connectCalendar,
       disconnectCalendar,
       syncCalendar,
+      exportData,
+      importBackup,
+      revealDataFolder,
+      clearDemoData,
+      reloadCapture,
+      completeOnboarding,
     ]
   )
 }

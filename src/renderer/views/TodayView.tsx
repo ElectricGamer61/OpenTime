@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react'
 
 import { summarizeDay } from '../../core/aggregate'
 import { dayStartTs } from '../../core/day'
-import type { Session } from '../../core/types'
+import type { IdleBlock, Session } from '../../core/types'
 import { Breakdown, FocusRing, Stat } from '../components/Charts'
+import { GoalsCard } from '../components/GoalsCard'
 import { IconInfo } from '../components/Icons'
+import { InsightsCard } from '../components/InsightsCard'
 import { Inspector } from '../components/Inspector'
 import { NowCard } from '../components/NowCard'
 import { RefreshButton } from '../components/RefreshButton'
@@ -14,6 +16,7 @@ import type { OpenTimeState } from '../state/useOpenTime'
 
 export function TodayView({ app }: { app: OpenTimeState }) {
   const [selected, setSelected] = useState<Session | null>(null)
+  const [selectedIdle, setSelectedIdle] = useState<IdleBlock | null>(null)
   const day = app.day
   const settings = app.settings
 
@@ -22,6 +25,19 @@ export function TodayView({ app }: { app: OpenTimeState }) {
     () => summarizeDay(day?.dayKey || '', day?.sessions || [], day?.idle || [], day?.events || []),
     [day]
   )
+
+  // The trailing week, summarised once — goals and the baseline insight both
+  // need it, and neither should aggregate inside a component body.
+  const weekSummaries = useMemo(
+    () => app.week.map((d) => summarizeDay(d.dayKey, d.sessions, d.idle, d.events)),
+    [app.week]
+  )
+
+  const categories = useMemo(() => {
+    const names = new Set(app.projects.map((p) => p.name))
+    for (const bucket of summary.byCategory) names.add(bucket.key)
+    return [...names].sort()
+  }, [app.projects, summary])
 
   if (!day || !settings) return null
 
@@ -57,7 +73,18 @@ export function TodayView({ app }: { app: OpenTimeState }) {
           <div>
             <strong>Showing generated activity.</strong> {app.captureNotice} Everything below runs
             through the same tracking engine that real capture feeds — only the window samples are
-            synthetic.
+            synthetic. Settings can remove the generated history at any time.
+          </div>
+        </div>
+      ) : app.capture?.notice ? (
+        // Capture is live but degraded — worth naming, and fixable in place.
+        <div className="notice">
+          <IconInfo />
+          <div>
+            <strong>Capture is limited.</strong> {app.capture.notice}{' '}
+            <button className="btn ghost small" onClick={() => void app.reloadCapture()}>
+              Check again
+            </button>
           </div>
         </div>
       ) : null}
@@ -122,6 +149,7 @@ export function TodayView({ app }: { app: OpenTimeState }) {
               projects={app.projects}
               selectedId={selected?.id ?? null}
               onSelect={setSelected}
+              onSelectIdle={setSelectedIdle}
             />
             {/* The timeline carries two colour channels at once — fill for the
                 project, left edge for how it counted — so it needs saying. */}
@@ -150,10 +178,27 @@ export function TodayView({ app }: { app: OpenTimeState }) {
           </div>
 
           <div className="grid" style={{ gap: 14, alignContent: 'start' }}>
+            <InsightsCard
+              today={summary}
+              sessions={day.sessions}
+              week={weekSummaries}
+              dayStartHour={settings.dayStartHour}
+            />
+
             <div className="card">
               <h2 className="card-title">Day balance</h2>
               <FocusRing summary={summary} />
             </div>
+
+            <GoalsCard
+              goals={app.goals}
+              today={summary}
+              week={weekSummaries}
+              dayKey={day.dayKey}
+              dayStartHour={settings.dayStartHour}
+              categories={categories}
+              onSave={(goals) => void app.saveGoals(goals)}
+            />
 
             <div className="card">
               <h2 className="card-title">Categories</h2>
@@ -169,11 +214,21 @@ export function TodayView({ app }: { app: OpenTimeState }) {
               <h2 className="card-title">Review</h2>
               <Inspector
                 session={selected}
+                idle={selectedIdle}
                 dayKey={day.dayKey}
+                dayAnchor={dayStartTs(day.dayKey, settings.dayStartHour) + 8 * 3600_000}
                 projects={app.projects}
                 onApply={(request) => {
                   void app.recategorize(request)
                   setSelected(null)
+                }}
+                onEdit={async (edit) => {
+                  const result = await app.editSession(edit)
+                  if (result.ok) {
+                    setSelected(null)
+                    setSelectedIdle(null)
+                  }
+                  return result
                 }}
               />
             </div>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Wordmark } from './components/Brand'
 import { Empty } from './components/Empty'
 import { IconProjects, IconSettings, IconToday, IconWeek } from './components/Icons'
+import { Onboarding } from './components/Onboarding'
 import { duration } from './lib/format'
 import type { OpenTimeState } from './state/useOpenTime'
 import { useNow, useOpenTime } from './state/useOpenTime'
@@ -42,6 +43,7 @@ export function App() {
 
   return (
     <div className="app">
+      {app.firstRun ? <Onboarding app={app} /> : null}
       <nav className="rail">
         <Wordmark />
         <div className="rail-section">Workspace</div>
@@ -99,6 +101,19 @@ function RailFooter({ app }: { app: OpenTimeState }) {
         <div className="rail-meta">
           <span>This stretch</span>
           <span>{duration(stretchSeconds)}</span>
+        </div>
+      ) : null}
+      {/* A timed pause is easy to forget you set; the rail is where you would
+          notice it. */}
+      {status?.pausedUntil ? (
+        <div className="rail-meta">
+          <span>Resumes</span>
+          <span>
+            {new Date(status.pausedUntil).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
         </div>
       ) : null}
       <div className="rail-meta">

@@ -44,6 +44,10 @@ export class Tracker {
   private stretchStart: number | null = null
   private breakSuggested = false
   private idleStart: number | null = null
+  private pausedUntil: number | null = null
+  private resumeTimer: NodeJS.Timeout | null = null
+  /** Serialised queue of in-flight storage writes; see `drain()`. */
+  private pending: Promise<void> = Promise.resolve()
 
   constructor(deps: TrackerDeps, settings: Settings, projects: Project[], rules: CategoryRule[]) {
     this.deps = deps
@@ -52,6 +56,7 @@ export class Tracker {
       sessionGapSeconds: settings.sessionGapSeconds,
       dayStartHour: settings.dayStartHour,
       ignoredApps: settings.ignoredApps,
+      ignoredTitleKeywords: settings.ignoredTitleKeywords,
       rules,
       projects,
     })
@@ -69,6 +74,7 @@ export class Tracker {
       sessionGapSeconds: settings.sessionGapSeconds,
       dayStartHour: settings.dayStartHour,
       ignoredApps: settings.ignoredApps,
+      ignoredTitleKeywords: settings.ignoredTitleKeywords,
       rules,
       projects,
     })
@@ -86,26 +92,68 @@ export class Tracker {
 
   stop(): void {
     this.clearTimer()
-    void this.commit(this.builder.flush())
+    this.clearResumeTimer()
+    this.pausedUntil = null
+    this.track(this.commit(this.builder.flush()))
     this.running = false
     this.mode = 'idle'
     this.stretchStart = null
     this.emit()
   }
 
-  pause(): void {
-    if (!this.running || this.paused) return
+  /**
+   * Pause tracking, optionally for a fixed number of minutes.
+   *
+   * A timed pause is the honest version of "don't track this": the alternative
+   * people actually reach for is quitting the app, and then they forget to start
+   * it again and lose the afternoon. Resuming is scheduled rather than
+   * remembered.
+   */
+  pause(minutes?: number): void {
+    if (!this.running) return
+    this.clearResumeTimer()
+    if (minutes && minutes > 0) {
+      this.pausedUntil = this.now() + minutes * 60_000
+      this.resumeTimer = setTimeout(() => {
+        this.resumeTimer = null
+        this.pausedUntil = null
+        this.resume()
+      }, minutes * 60_000)
+      this.resumeTimer.unref?.()
+    } else {
+      this.pausedUntil = null
+    }
+    if (this.paused) {
+      this.emit()
+      return
+    }
     this.paused = true
     this.clearTimer()
-    void this.commit(this.builder.flush())
+    this.track(this.commit(this.builder.flush()))
     this.stretchStart = null
     this.emit()
   }
 
   resume(): void {
+    this.clearResumeTimer()
+    this.pausedUntil = null
     if (!this.running || !this.paused) return
     this.paused = false
     this.enterActive()
+  }
+
+  /**
+   * Swap the capture adapter in place.
+   *
+   * Used when a user grants macOS Accessibility or switches capture mode: the
+   * open session is closed first, because samples from a different adapter are
+   * not a continuation of the stretch the old one was building.
+   */
+  setCapture(capture: Capture): void {
+    if (capture === this.deps.capture) return
+    this.track(this.commit(this.builder.flush()))
+    this.deps.capture = capture
+    this.emit()
   }
 
   /** Called on OS resume/unlock so we don't wait out the idle heartbeat. */
@@ -123,6 +171,7 @@ export class Tracker {
       captureAdapter: this.deps.capture.name,
       demo: this.deps.capture.demo,
       stretchStart: this.stretchStart,
+      pausedUntil: this.pausedUntil,
       current:
         open && this.mode === 'active' && !this.paused
           ? {
@@ -149,13 +198,13 @@ export class Tracker {
       if (this.deps.getIdleSeconds() >= this.settings.idleThresholdSeconds) {
         // End the session at its last observed sample, not at `now`: the time
         // since then was the user walking away, and must not be counted.
-        void this.commit(this.builder.flush())
+        this.track(this.commit(this.builder.flush()))
         this.enterIdle(now)
         return
       }
       const sample = this.deps.capture.sample(now)
-      if (sample) void this.commit(this.builder.sample(sample, now))
-      else void this.commit(this.builder.flush())
+      if (sample) this.track(this.commit(this.builder.sample(sample, now)))
+      else this.track(this.commit(this.builder.flush()))
       this.maybeSuggestBreak(now)
     } catch (err) {
       // A single bad poll must never take the loop down.
@@ -204,7 +253,7 @@ export class Tracker {
     if (this.idleStart === null) return
     const block = makeIdleBlock(this.idleStart, now)
     this.idleStart = null
-    if (block) void this.storeIdle(block)
+    if (block) this.track(this.storeIdle(block))
   }
 
   private async storeIdle(block: IdleBlock): Promise<void> {
@@ -218,6 +267,26 @@ export class Tracker {
     this.deps.onBreakSuggestion?.(Math.round((now - this.stretchStart) / 60_000))
   }
 
+  /**
+   * Wait for every write this tracker has started.
+   *
+   * Storage writes are durable but asynchronous, and the engine deliberately
+   * does not block a poll tick on the disk. That leaves one moment where the
+   * difference matters: quitting. `stop()` followed by `drain()` is the only
+   * ordering that guarantees the last session reached the journal before the
+   * process exits. Tests use it for the same reason.
+   */
+  async drain(): Promise<void> {
+    await this.pending
+  }
+
+  /** Chain a write onto the pending queue so `drain()` can await all of them. */
+  private track(work: Promise<void>): void {
+    this.pending = this.pending.then(() => work).catch((err) => {
+      console.error('[tracker] write failed:', err)
+    })
+  }
+
   private async commit(sessions: Session[]): Promise<void> {
     if (!sessions.length) return
     await this.deps.storage.appendSessions(sessions)
@@ -228,6 +297,13 @@ export class Tracker {
     if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
+    }
+  }
+
+  private clearResumeTimer(): void {
+    if (this.resumeTimer) {
+      clearTimeout(this.resumeTimer)
+      this.resumeTimer = null
     }
   }
 

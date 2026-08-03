@@ -8,7 +8,9 @@
 import type {
   CalendarEvent,
   CategoryRule,
+  Goal,
   IdleBlock,
+  Productivity,
   Project,
   Session,
   Settings,
@@ -24,11 +26,19 @@ export const CHANNELS = {
   saveSettings: 'opentime:saveSettings',
   saveProjects: 'opentime:saveProjects',
   saveRules: 'opentime:saveRules',
+  saveGoals: 'opentime:saveGoals',
   recategorize: 'opentime:recategorize',
+  editSession: 'opentime:editSession',
   addManualEvent: 'opentime:addManualEvent',
   connectCalendar: 'opentime:connectCalendar',
   disconnectCalendar: 'opentime:disconnectCalendar',
   syncCalendar: 'opentime:syncCalendar',
+  exportData: 'opentime:exportData',
+  importBackup: 'opentime:importBackup',
+  revealDataFolder: 'opentime:revealDataFolder',
+  clearDemoData: 'opentime:clearDemoData',
+  reloadCapture: 'opentime:reloadCapture',
+  completeOnboarding: 'opentime:completeOnboarding',
   statusEvent: 'opentime:status',
   dataEvent: 'opentime:data-changed',
 } as const
@@ -40,18 +50,42 @@ export interface DayPayload {
   events: CalendarEvent[]
 }
 
+/** Everything the user needs to know about whether tracking is really working. */
+export interface CaptureHealth {
+  /** Adapter in use, e.g. "x-win (native)". */
+  adapter: string
+  /** True when the numbers are synthesised rather than observed. */
+  demo: boolean
+  /** Plain-language explanation of a fallback or a degraded permission. */
+  notice?: string
+  /** What the user could do about it, when there is something. */
+  remedy?: 'macos-accessibility' | 'unsupported-session' | 'module-missing'
+  /** Whether macOS has granted Accessibility (undefined off macOS). */
+  accessibilityTrusted?: boolean
+}
+
 export interface Bootstrap {
   settings: Settings
   projects: Project[]
   rules: CategoryRule[]
+  goals: Goal[]
   status: TrackerStatus
   today: DayPayload
   /** Day keys of the trailing week, oldest first. */
   weekKeys: string[]
+  /** Every day key with recorded history, ascending — the reporting range. */
+  historyKeys: string[]
   appVersion: string
   platform: string
+  /** Where the store lives on disk, shown in Settings. */
+  dataDirectory: string
+  capture: CaptureHealth
   /** Populated when capture fell back to the demo adapter. */
   captureNotice?: string
+  /** True until the first-run checklist has been completed. */
+  firstRun: boolean
+  /** Day keys holding seeded demo history, so the UI can offer to clear them. */
+  demoDays: string[]
 }
 
 export interface RecategorizeRequest {
@@ -60,12 +94,68 @@ export interface RecategorizeRequest {
   category: string
   /** Also persist a rule so future activity matches automatically. */
   rememberAs?: 'app' | 'keyword'
-  productivity?: Session['productivity']
+  productivity?: Productivity
+  note?: string
+}
+
+/**
+ * Every structural correction, in one channel.
+ *
+ * A discriminated union rather than six near-identical channels: they all take
+ * a day key, all mutate one day's sessions, and all return the updated day, so
+ * splitting them apart would only duplicate the plumbing.
+ */
+export type SessionEdit =
+  | { kind: 'split'; dayKey: string; sessionId: string; at: number }
+  | { kind: 'merge'; dayKey: string; sessionIds: string[] }
+  | { kind: 'delete'; dayKey: string; sessionId: string }
+  | { kind: 'retime'; dayKey: string; sessionId: string; startTime: number; endTime: number }
+  | {
+      kind: 'manual'
+      dayKey: string
+      startTime: number
+      endTime: number
+      category: string
+      productivity?: Productivity
+      note?: string
+    }
+  | {
+      kind: 'claim-idle'
+      dayKey: string
+      /** Start time of the away block being claimed — idle blocks carry no id. */
+      idleStart: number
+      category: string
+      productivity?: Productivity
+      note?: string
+    }
+
+export interface EditResult {
+  ok: boolean
+  message?: string
+  day?: DayPayload
 }
 
 export interface CalendarResult {
   ok: boolean
   message: string
+}
+
+export type ExportFormat = 'sessions-csv' | 'daily-csv' | 'backup-json'
+
+export interface ExportRequest {
+  format: ExportFormat
+  /** Inclusive day-key range. Defaults to the whole history. */
+  fromKey?: string
+  toKey?: string
+}
+
+export interface ExportResult {
+  ok: boolean
+  message: string
+  /** Where the file landed, when it did. */
+  path?: string
+  /** Rows or days written — the number worth confirming back to the user. */
+  count?: number
 }
 
 /** The surface exposed on `window.opentime`. */
@@ -74,15 +164,26 @@ export interface OpenTimeApi {
   getDay(dayKey: string): Promise<DayPayload>
   getRange(dayKeys: string[]): Promise<DayPayload[]>
   getStatus(): Promise<TrackerStatus>
-  setTracking(action: 'start' | 'pause' | 'resume' | 'stop'): Promise<TrackerStatus>
+  setTracking(
+    action: 'start' | 'pause' | 'resume' | 'stop',
+    minutes?: number
+  ): Promise<TrackerStatus>
   saveSettings(settings: Settings): Promise<Settings>
   saveProjects(projects: Project[]): Promise<Project[]>
   saveRules(rules: CategoryRule[]): Promise<CategoryRule[]>
+  saveGoals(goals: Goal[]): Promise<Goal[]>
   recategorize(request: RecategorizeRequest): Promise<DayPayload>
+  editSession(edit: SessionEdit): Promise<EditResult>
   addManualEvent(event: Omit<CalendarEvent, 'id' | 'source'>): Promise<DayPayload>
   connectCalendar(): Promise<CalendarResult>
   disconnectCalendar(): Promise<CalendarResult>
   syncCalendar(): Promise<CalendarResult>
+  exportData(request: ExportRequest): Promise<ExportResult>
+  importBackup(): Promise<ExportResult>
+  revealDataFolder(): Promise<void>
+  clearDemoData(): Promise<ExportResult>
+  reloadCapture(): Promise<CaptureHealth>
+  completeOnboarding(): Promise<Settings>
   onStatus(handler: (status: TrackerStatus) => void): () => void
   onDataChanged(handler: () => void): () => void
 }

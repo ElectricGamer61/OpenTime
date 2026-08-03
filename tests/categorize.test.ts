@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyProductivity,
   isIgnored,
+  isPrivateSample,
   resolveCategory,
   UNCATEGORIZED,
   urlHost,
@@ -149,5 +150,33 @@ describe('isIgnored', () => {
 
   it('ignores nothing when the list is empty', () => {
     expect(isIgnored('Code', [])).toBe(false)
+  })
+})
+
+describe('isPrivateSample', () => {
+  const sample = { app: 'chrome', title: 'Acme Merger — data room', url: 'docs.example.com' }
+
+  it('honours the ignored-app list', () => {
+    expect(isPrivateSample({ app: '1Password', title: 'Vault', url: '' }, ['1password'])).toBe(true)
+  })
+
+  it('matches a private subject in the window title, whatever the app', () => {
+    expect(isPrivateSample(sample, [], ['acme merger'])).toBe(true)
+    expect(isPrivateSample({ ...sample, app: 'Word' }, [], ['acme merger'])).toBe(true)
+  })
+
+  it('matches a private subject in the host', () => {
+    expect(isPrivateSample(sample, [], ['docs.example.com'])).toBe(true)
+  })
+
+  it('does not match the app name through the title rule', () => {
+    // The keyword list deliberately searches title and host only; matching the
+    // app name too would make "chrome" a keyword that hides every web page.
+    expect(isPrivateSample(sample, [], ['chrome'])).toBe(false)
+  })
+
+  it('records normally when nothing is configured', () => {
+    expect(isPrivateSample(sample, [], [])).toBe(false)
+    expect(isPrivateSample(sample, [])).toBe(false)
   })
 })

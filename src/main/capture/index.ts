@@ -94,7 +94,15 @@ export interface CaptureProbe {
   capture: Capture
   /** Why the demo adapter was chosen, when it was. */
   reason?: string
+  /**
+   * Whether the fallback is something the user can fix (grant a permission,
+   * switch desktop session) or simply what this machine is. Onboarding shows a
+   * "Fix this" step for the first and an explanation for the second.
+   */
+  remedy?: CaptureRemedy
 }
+
+export type CaptureRemedy = 'macos-accessibility' | 'unsupported-session' | 'module-missing'
 
 /**
  * Probe the native module in a throwaway child process.
@@ -107,7 +115,7 @@ export interface CaptureProbe {
  *
  * One `spawnSync` at startup, and only when native capture is on the table.
  */
-function probeNativeOutOfProcess(): { ok: boolean; error?: string } {
+function probeNativeOutOfProcess(): { ok: boolean; error?: string; remedy?: CaptureRemedy } {
   const script = `
     try {
       const xwin = require(${JSON.stringify('@miniben90/x-win')})
@@ -128,22 +136,56 @@ function probeNativeOutOfProcess(): { ok: boolean; error?: string } {
 
   if (result.status === 0) return { ok: true }
   if (result.signal) {
-    return { ok: false, error: `native capture crashed the probe (${result.signal})` }
+    return {
+      ok: false,
+      error: `native capture crashed the probe (${result.signal})`,
+      remedy: 'unsupported-session',
+    }
   }
   const stderr = (result.stderr || '').trim()
+  if (/cannot find module|MODULE_NOT_FOUND/i.test(stderr)) {
+    return {
+      ok: false,
+      error:
+        'the native window-capture module is not installed for this platform — reinstall dependencies, or install the app package built for this OS',
+      remedy: 'module-missing',
+    }
+  }
   if (/panicked|Wayland|org\.gnome\.Shell/i.test(stderr)) {
     return {
       ok: false,
       error:
         'this desktop session does not expose the focused window (Wayland and some remote/headless sessions do not)',
+      remedy: 'unsupported-session',
     }
   }
-  return { ok: false, error: stderr.split('\n')[0] || 'native capture is unavailable here' }
+  return {
+    ok: false,
+    error: stderr.split('\n')[0] || 'native capture is unavailable here',
+    remedy: 'unsupported-session',
+  }
+}
+
+/**
+ * macOS gates window *titles* behind Accessibility. Without it, `x-win` still
+ * loads and still returns an app name, so the probe passes while every title
+ * comes back empty — the app looks like it is working and quietly records
+ * nothing useful. Callers pass `isTrusted` from `systemPreferences`, which is
+ * the only reliable way to tell the difference.
+ */
+export function macAccessibilityNotice(isTrusted: boolean): string | undefined {
+  if (isTrusted) return undefined
+  return (
+    'macOS has not granted OpenTime Accessibility access, so window titles are hidden. ' +
+    'Open System Settings → Privacy & Security → Accessibility and enable OpenTime, ' +
+    'then reload capture.'
+  )
 }
 
 export function createCapture(
   mode: 'auto' | 'native' | 'demo',
-  selfExecPath: string
+  selfExecPath: string,
+  opts: { macAccessibilityTrusted?: boolean } = {}
 ): CaptureProbe {
   if (mode === 'demo') return { capture: new DemoCapture(), reason: 'demo mode selected in Settings' }
 
@@ -152,11 +194,22 @@ export function createCapture(
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const mod = require('@miniben90/x-win') as XWinModule
-      return { capture: new NativeCapture(mod, selfExecPath) }
+      const capture = new NativeCapture(mod, selfExecPath)
+      // Native capture works, but on macOS it may be capturing app names only.
+      // That is a degraded state worth naming rather than a fallback.
+      if (process.platform === 'darwin' && opts.macAccessibilityTrusted === false) {
+        return {
+          capture,
+          reason: macAccessibilityNotice(false),
+          remedy: 'macos-accessibility',
+        }
+      }
+      return { capture }
     } catch (err) {
       return {
         capture: new DemoCapture(),
         reason: `native capture unavailable: ${(err as Error).message}`,
+        remedy: 'module-missing',
       }
     }
   }
@@ -165,5 +218,5 @@ export function createCapture(
     // The user asked for native explicitly; still don't crash, but be loud.
     console.error('[capture]', probe.error)
   }
-  return { capture: new DemoCapture(), reason: probe.error }
+  return { capture: new DemoCapture(), reason: probe.error, remedy: probe.remedy }
 }

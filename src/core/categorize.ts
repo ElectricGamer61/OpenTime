@@ -113,3 +113,23 @@ export function isIgnored(app: string, ignoredApps: string[]): boolean {
   if (!key) return false
   return ignoredApps.some((a) => a.toLowerCase() === key)
 }
+
+/**
+ * Whether a sample must never be recorded.
+ *
+ * Two layers, because "private" means two different things in practice: a whole
+ * application you never want logged (a password manager, a therapy journal), and
+ * a *subject* you never want logged whatever app it appears in — a client name,
+ * a legal matter, a medical portal. The second is matched against the window
+ * title and host, which is exactly where those leak.
+ */
+export function isPrivateSample(
+  sample: Pick<WindowSample, 'app' | 'title' | 'url'>,
+  ignoredApps: string[],
+  ignoredTitleKeywords: string[] = []
+): boolean {
+  if (isIgnored(sample.app, ignoredApps)) return true
+  if (!ignoredTitleKeywords.length) return false
+  const hay = `${sample.title || ''} ${sample.url || ''}`.toLowerCase()
+  return ignoredTitleKeywords.some((kw) => kw && hay.includes(kw.toLowerCase()))
+}

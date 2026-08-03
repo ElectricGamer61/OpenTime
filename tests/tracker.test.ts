@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PROJECTS, DEFAULT_SETTINGS } from '../src/core/defaults'
 import type { Settings, WindowSample } from '../src/core/types'
 import type { Capture } from '../src/main/capture'
-import { JsonStorage } from '../src/main/storage/JsonStorage'
+import { FileStorage } from '../src/main/storage/FileStorage'
 import { Tracker } from '../src/main/tracker'
 
 class ScriptedCapture implements Capture {
@@ -29,7 +29,7 @@ class ScriptedCapture implements Capture {
 }
 
 let dir: string
-let storage: JsonStorage
+let storage: FileStorage
 let capture: ScriptedCapture
 let clock: number
 let idleSeconds: number
@@ -58,7 +58,7 @@ async function makeTracker(patch: Partial<Settings> = {}) {
 beforeEach(async () => {
   vi.useFakeTimers()
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'opentime-tracker-'))
-  storage = new JsonStorage(dir)
+  storage = new FileStorage(dir)
   await storage.init()
   capture = new ScriptedCapture()
   clock = new Date(2026, 2, 14, 9, 0, 0, 0).getTime()
@@ -98,9 +98,10 @@ describe('Tracker', () => {
     run(tracker, 60)
     // A full minute of polling, still nothing persisted — this is the batching
     // that keeps the engine cheap.
-    expect(storage.getSessions('2026-03-14')).toEqual([])
+    expect(await storage.getSessions('2026-03-14')).toEqual([])
     tracker.stop()
-    expect(storage.getSessions('2026-03-14')).toHaveLength(1)
+    await tracker.drain()
+    expect(await storage.getSessions('2026-03-14')).toHaveLength(1)
   })
 
   it('closes the session and records an idle block when the OS reports idle', async () => {
@@ -114,7 +115,8 @@ describe('Tracker', () => {
 
     expect(tracker.status.mode).toBe('idle')
     expect(tracker.status.current).toBeNull()
-    const sessions = storage.getSessions('2026-03-14')
+    await tracker.drain()
+    const sessions = await storage.getSessions('2026-03-14')
     expect(sessions).toHaveLength(1)
     expect(sessions[0].durationSeconds).toBe(600)
 
@@ -122,8 +124,9 @@ describe('Tracker', () => {
     idleSeconds = 0
     clock += 30 * 60 * 1000
     vi.advanceTimersByTime(30_000)
+    await tracker.drain()
 
-    const idle = storage.getIdle('2026-03-14')
+    const idle = await storage.getIdle('2026-03-14')
     expect(idle).toHaveLength(1)
     expect(idle[0].durationSeconds).toBeGreaterThan(30 * 60)
     expect(tracker.status.mode).toBe('active')
@@ -151,14 +154,16 @@ describe('Tracker', () => {
     tracker.tick()
     run(tracker, 300)
     tracker.pause()
+    await tracker.drain()
 
-    expect(storage.getSessions('2026-03-14')).toHaveLength(1)
+    expect(await storage.getSessions('2026-03-14')).toHaveLength(1)
     expect(tracker.status.paused).toBe(true)
     expect(tracker.status.current).toBeNull()
 
     // Timers must not produce more data while paused.
     vi.advanceTimersByTime(60_000)
-    expect(storage.getSessions('2026-03-14')).toHaveLength(1)
+    await tracker.drain()
+    expect(await storage.getSessions('2026-03-14')).toHaveLength(1)
 
     tracker.resume()
     expect(tracker.status.paused).toBe(false)
@@ -172,8 +177,9 @@ describe('Tracker', () => {
     run(tracker, 300)
     capture.current = { app: 'Slack', title: '#general' }
     run(tracker, 5)
+    await tracker.drain()
 
-    const sessions = storage.getSessions('2026-03-14')
+    const sessions = await storage.getSessions('2026-03-14')
     expect(sessions).toHaveLength(1)
     expect(sessions[0].category).toBe('Deep Work')
     expect(tracker.status.current?.category).toBe('Communication')
@@ -186,7 +192,7 @@ describe('Tracker', () => {
     capture.current = null
     run(tracker, 10)
     expect(tracker.status.current).toBeNull()
-    expect(storage.getSessions('2026-03-14')).toEqual([])
+    expect(await storage.getSessions('2026-03-14')).toEqual([])
     tracker.stop()
   })
 
@@ -250,8 +256,107 @@ describe('Tracker', () => {
     tracker.start()
     capture.current = { app: '1Password', title: 'Personal vault' }
     run(tracker, 300)
-    expect(storage.getSessions('2026-03-14')).toEqual([])
+    expect(await storage.getSessions('2026-03-14')).toEqual([])
     tracker.stop()
-    expect(storage.getSessions('2026-03-14')).toEqual([])
+    await tracker.drain()
+    expect(await storage.getSessions('2026-03-14')).toEqual([])
+  })
+
+  it('respects private title keywords whatever app they appear in', async () => {
+    const { tracker } = await makeTracker({ ignoredTitleKeywords: ['acme merger'] })
+    tracker.start()
+    capture.current = { app: 'Code', title: 'acme merger — notes.md' }
+    run(tracker, 300)
+    tracker.stop()
+    await tracker.drain()
+    expect(await storage.getSessions('2026-03-14')).toEqual([])
+  })
+
+  it('does not merge private time into the session that preceded it', async () => {
+    const { tracker } = await makeTracker({ ignoredApps: ['1password'] })
+    tracker.start()
+    tracker.tick()
+    run(tracker, 300)
+    capture.current = { app: '1Password', title: 'Personal vault' }
+    run(tracker, 600)
+    capture.current = { app: 'Code', title: 'a.ts' }
+    run(tracker, 300)
+    tracker.stop()
+    await tracker.drain()
+
+    const sessions = await storage.getSessions('2026-03-14')
+    const total = sessions.reduce((sum, s) => sum + s.durationSeconds, 0)
+    // The ten private minutes are gone entirely, not absorbed into either
+    // neighbouring block.
+    expect(total).toBeLessThanOrEqual(660)
+  })
+
+  it('resumes automatically at the end of a timed pause', async () => {
+    const { tracker } = await makeTracker()
+    tracker.start()
+    tracker.tick()
+    tracker.pause(15)
+
+    expect(tracker.status.paused).toBe(true)
+    expect(tracker.status.pausedUntil).toBe(clock + 15 * 60_000)
+
+    clock += 15 * 60_000
+    vi.advanceTimersByTime(15 * 60_000)
+
+    expect(tracker.status.paused).toBe(false)
+    expect(tracker.status.pausedUntil).toBeNull()
+    tracker.stop()
+  })
+
+  it('cancels a timed pause when resumed by hand', async () => {
+    const { tracker } = await makeTracker()
+    tracker.start()
+    tracker.pause(60)
+    tracker.resume()
+    expect(tracker.status.pausedUntil).toBeNull()
+
+    // The scheduled resume must not fire later and re-enter an active loop the
+    // user may have paused again in the meantime.
+    tracker.pause()
+    vi.advanceTimersByTime(61 * 60_000)
+    expect(tracker.status.paused).toBe(true)
+    tracker.stop()
+  })
+
+  it('closes the open session when the capture adapter is swapped', async () => {
+    const { tracker } = await makeTracker()
+    tracker.start()
+    tracker.tick()
+    run(tracker, 300)
+
+    const replacement: Capture = {
+      name: 'replacement',
+      demo: false,
+      sample: () => ({ app: 'Figma', title: 'Board' }),
+      dispose() {},
+    }
+    tracker.setCapture(replacement)
+    await tracker.drain()
+
+    expect(await storage.getSessions('2026-03-14')).toHaveLength(1)
+    expect(tracker.status.captureAdapter).toBe('replacement')
+    expect(tracker.status.demo).toBe(false)
+    tracker.stop()
+  })
+
+  it('drain() resolves only once the last write has landed', async () => {
+    const { tracker } = await makeTracker()
+    tracker.start()
+    tracker.tick()
+    run(tracker, 300)
+    tracker.stop()
+    await tracker.drain()
+    await storage.flush()
+
+    // Reopening the same directory proves the write reached disk, not just the
+    // in-memory cache — this is the ordering `before-quit` depends on.
+    const reopened = new FileStorage(dir)
+    await reopened.init()
+    expect(await reopened.getSessions('2026-03-14')).toHaveLength(1)
   })
 })

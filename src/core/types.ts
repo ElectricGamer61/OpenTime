@@ -25,6 +25,15 @@ export interface WindowSample {
   execPath?: string
 }
 
+/**
+ * Where a session came from.
+ *
+ * This matters for honesty: `demo` rows are synthesised, and the user must be
+ * able to see that and delete them in one action rather than discovering months
+ * later that their history is partly fictional.
+ */
+export type SessionSource = 'capture' | 'manual' | 'demo'
+
 /** A contiguous stretch of time spent on one category of work. */
 export interface Session {
   id: string
@@ -41,6 +50,12 @@ export interface Session {
   durationSeconds: number
   /** Project id this session was attributed to, if any. */
   projectId?: string
+  /** Defaults to 'capture' when absent (every v1 row predates this field). */
+  source?: SessionSource
+  /** Free text the user attached in the review panel. */
+  note?: string
+  /** True once a human corrected or created this row by hand. */
+  edited?: boolean
 }
 
 /** A stretch the user was away from the machine (OS-reported idle). */
@@ -86,6 +101,25 @@ export interface CalendarEvent {
   calendarName?: string
 }
 
+/** A time target the user is holding themselves to. */
+export interface Goal {
+  id: string
+  name: string
+  /**
+   * 'productivity' targets one of the three productivity levels;
+   * 'category' targets a single category / project name.
+   */
+  kind: 'productivity' | 'category'
+  /** A `Productivity` value, or a category name, depending on `kind`. */
+  target: string
+  /** Whether the target is a floor to reach or a ceiling to stay under. */
+  direction: 'at-least' | 'at-most'
+  /** The target itself, in seconds. */
+  seconds: number
+  cadence: 'daily' | 'weekly'
+  enabled: boolean
+}
+
 export interface Settings {
   /** Active-mode sampling interval in seconds. */
   pollIntervalSeconds: number
@@ -99,10 +133,21 @@ export interface Settings {
   focusBlockMinutes: number
   /** Apps we never record (lower-cased names). */
   ignoredApps: string[]
+  /** Window titles containing any of these are never recorded (lower-cased). */
+  ignoredTitleKeywords: string[]
+  /** Days of history to keep. 0 keeps everything forever. */
+  retentionDays: number
   /** Capture adapter preference; 'auto' probes the native one and falls back. */
   captureMode: 'auto' | 'native' | 'demo'
+  /**
+   * Whether a fortnight of synthetic history may be seeded when real capture is
+   * unavailable. Off means an honest empty dashboard instead of fiction.
+   */
+  seedDemoWhenUnavailable: boolean
   launchAtLogin: boolean
   notificationsEnabled: boolean
+  /** Epoch ms the first-run checklist was completed; undefined until then. */
+  onboardedAt?: number
   calendar: CalendarSettings
 }
 
@@ -118,18 +163,42 @@ export interface CalendarSettings {
   lastSyncedAt?: number
 }
 
-/** Everything persisted by the storage layer, one shape for JSON or SQLite. */
+/**
+ * Everything persisted by the storage layer.
+ *
+ * This remains the shape of a *backup*, and of the small configuration file the
+ * live store keeps in memory. It is no longer the shape of the on-disk store:
+ * `FileStorage` shards the per-day maps into one file per day so the store scales
+ * past what fits in memory. See `src/main/storage/FileStorage.ts`.
+ */
 export interface PersistedState {
   version: number
   settings: Settings
   projects: Project[]
   rules: CategoryRule[]
+  goals: Goal[]
   /** Day key (YYYY-MM-DD, tracking-day bucketed) → sessions, ascending by start. */
   sessionsByDay: Record<string, Session[]>
   /** Day key → idle blocks. */
   idleByDay: Record<string, IdleBlock[]>
   /** Day key → calendar events. */
   eventsByDay: Record<string, CalendarEvent[]>
+}
+
+/** The configuration half of `PersistedState` — small, always held in memory. */
+export interface StoreConfig {
+  version: number
+  settings: Settings
+  projects: Project[]
+  rules: CategoryRule[]
+  goals: Goal[]
+}
+
+/** One tracking day's records. The unit the sharded store reads and writes. */
+export interface DayRecord {
+  sessions: Session[]
+  idle: IdleBlock[]
+  events: CalendarEvent[]
 }
 
 /** Live tracker status pushed to the renderer. */
@@ -144,4 +213,6 @@ export interface TrackerStatus {
   current: (Session & { open: true }) | null
   /** Epoch ms the current unbroken active stretch began; null when idle. */
   stretchStart: number | null
+  /** Epoch ms a timed pause expires at, when one is running. */
+  pausedUntil?: number | null
 }

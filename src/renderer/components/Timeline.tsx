@@ -24,6 +24,8 @@ interface Props {
   projects: Project[]
   selectedId: string | null
   onSelect(session: Session | null): void
+  /** Away blocks are selectable too — claiming one is a real correction. */
+  onSelectIdle?(block: IdleBlock | null): void
 }
 
 /**
@@ -42,6 +44,7 @@ export const Timeline = memo(function Timeline({
   projects,
   selectedId,
   onSelect,
+  onSelectIdle,
 }: Props) {
   const window = useMemo(
     () => timelineWindow(dayKey, dayStartHour, sessions),
@@ -130,6 +133,7 @@ export const Timeline = memo(function Timeline({
           const accent =
             b.kind === 'idle' ? '#3a465a' : productivityColor(b.productivity)
           const session = b.kind === 'session' ? sessions.find((s) => s.id === b.id) : null
+          const block = b.kind === 'idle' ? idle.find((i) => i.startTime === b.start) : null
           return (
             <div
               key={b.id}
@@ -142,7 +146,10 @@ export const Timeline = memo(function Timeline({
                 background: b.kind === 'idle' ? undefined : blockFill(projectColorFor(b.label)),
                 borderLeftColor: accent,
               }}
-              onClick={() => onSelect(session ?? null)}
+              onClick={() => {
+                onSelect(session ?? null)
+                onSelectIdle?.(block ?? null)
+              }}
               title={`${b.label} · ${duration(b.durationSeconds)} · ${timeOfDay(b.start)}–${timeOfDay(b.end)}`}
             >
               {height >= TINY_PX ? <div className="block-label">{b.label}</div> : null}
