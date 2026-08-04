@@ -6,7 +6,7 @@ import { describeEntry } from '../lib/entries'
 import { duration, percent, timeOfDay } from '../lib/format'
 import { IconApps, IconClose, IconPencil, IconTrash } from './Icons'
 
-const WIDTH = 344
+const WIDTH = 356
 /** Kept off the window edge so the card never looks clipped. */
 const MARGIN = 12
 
@@ -49,7 +49,7 @@ export function EntryPopover({
   onDelete,
 }: EntryPopoverProps) {
   const card = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [pos, setPos] = useState<{ top: number; left: number; origin: string } | null>(null)
   const [confirming, setConfirming] = useState(false)
 
   // Anchoring happens before paint: a card that appears at 0,0 and then jumps
@@ -63,15 +63,15 @@ export function EntryPopover({
     const viewportW = window.innerWidth
     const viewportH = window.innerHeight
     const toRight = anchor.right + 10
-    const left =
-      toRight + WIDTH + MARGIN <= viewportW
-        ? toRight
-        : Math.max(MARGIN, anchor.left - WIDTH - 10)
+    const fitsRight = toRight + WIDTH + MARGIN <= viewportW
+    const left = fitsRight ? toRight : Math.max(MARGIN, anchor.left - WIDTH - 10)
     const top = Math.min(
       Math.max(MARGIN, anchor.top - 8),
       Math.max(MARGIN, viewportH - height - MARGIN)
     )
-    setPos({ top, left })
+    // The entrance scales from the side the block is on, so the card reads as
+    // growing out of it rather than landing beside it.
+    setPos({ top, left, origin: fitsRight ? 'top left' : 'top right' })
   }, [anchor, entry.id])
 
   useEffect(() => {
@@ -109,9 +109,19 @@ export function EntryPopover({
     <div
       className="popover"
       ref={card}
+      /* Keyed so opening a different block replays the entrance — the card
+         teleporting between blocks with no motion reads as a glitch. */
+      key={entry.id}
       role="dialog"
       aria-label={entry.label}
-      style={{ width: WIDTH, top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+      style={
+        {
+          width: WIDTH,
+          top: pos?.top ?? -9999,
+          left: pos?.left ?? -9999,
+          '--origin': pos?.origin ?? 'top left',
+        } as React.CSSProperties
+      }
     >
       <div className="popover-head">
         <span className="popover-dot" style={{ background: color }} />

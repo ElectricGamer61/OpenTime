@@ -160,6 +160,11 @@ export const DayGrid = memo(function DayGrid({
           const height = Math.max(18, span - 2)
           const color = colorOf(entry)
           const selected = selectedId === entry.id
+          // Which text line, if any, shares the bottom row with the pinned
+          // duration. Only that line reserves clearance for it — see the
+          // .pad-range / .pad-apps rules.
+          const padRange = height >= COMPACT_PX && height < 56
+          const padApps = height >= ROOMY_PX && height < 68 && entry.apps.length > 0
 
           return (
             <button
@@ -167,12 +172,14 @@ export const DayGrid = memo(function DayGrid({
               /* A short block gets tighter type and padding rather than losing
                  its label: an unnamed stripe tells the reader nothing. */
               className={`entry ${entry.kind}${height < COMPACT_PX ? ' slim' : ''}${
-                selected ? ' selected' : ''
-              }`}
+                padRange ? ' pad-range' : ''
+              }${padApps ? ' pad-apps' : ''}${selected ? ' selected' : ''}`}
               style={{
                 top,
                 height,
-                left: `calc(${(entry.lane / lanes) * 100}% + 2px)`,
+                /* A symmetric 3px gutter each side — the old 2/4 split made
+                   every lane look a pixel off its neighbour. */
+                left: `calc(${(entry.lane / lanes) * 100}% + 3px)`,
                 width: `calc(${100 / lanes}% - 6px)`,
                 '--fill': color,
                 '--edge': edgeOn(color),
