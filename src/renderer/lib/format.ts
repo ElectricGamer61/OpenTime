@@ -7,6 +7,13 @@ const FULL_FMT = new Intl.DateTimeFormat(undefined, {
   month: 'long',
   day: 'numeric',
 })
+/** The calendar header carries the year, because it can be scrolled into last year. */
+const DATED_FMT = new Intl.DateTimeFormat(undefined, {
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+})
 
 /** "3h 12m", "48m", "—" — the everyday duration format. */
 export function duration(seconds: number): string {
@@ -39,6 +46,10 @@ export function weekdayShort(ts: number): string {
 
 export function longDate(ts: number): string {
   return FULL_FMT.format(ts)
+}
+
+export function datedTitle(ts: number): string {
+  return DATED_FMT.format(ts)
 }
 
 export function percent(share: number): string {

@@ -13,12 +13,12 @@ import { Empty } from './Empty'
  * what a weekly overview is for.
  */
 const STACK_FILLS: Record<string, string> = {
-  productive: 'linear-gradient(180deg, rgba(70, 207, 135, 0.85), rgba(70, 207, 135, 0.5))',
-  neutral: 'linear-gradient(180deg, rgba(115, 134, 160, 0.7), rgba(115, 134, 160, 0.42))',
-  distracting: 'linear-gradient(180deg, rgba(242, 104, 127, 0.8), rgba(242, 104, 127, 0.48))',
+  productive: 'linear-gradient(180deg, rgba(62, 207, 110, 0.85), rgba(62, 207, 110, 0.5))',
+  neutral: 'linear-gradient(180deg, rgba(107, 107, 112, 0.75), rgba(107, 107, 112, 0.45))',
+  distracting: 'linear-gradient(180deg, rgba(242, 84, 91, 0.8), rgba(242, 84, 91, 0.48))',
   // Away time caps every column, so at full opacity it reads as a solid box
   // sitting on top of the day rather than as absence.
-  idle: 'rgba(34, 42, 55, 0.5)',
+  idle: 'rgba(44, 44, 51, 0.55)',
 }
 
 /** Stat tile: one headline number with a supporting line and optional meter. */
@@ -178,6 +178,154 @@ export const FocusRing = memo(function FocusRing({ summary }: { summary: DaySumm
           Away
           <b>{duration(summary.idleSeconds)}</b>
         </div>
+      </div>
+    </div>
+  )
+})
+
+export interface Slice {
+  key: string
+  label: string
+  seconds: number
+  color: string
+}
+
+/**
+ * Donut with a legend beside it.
+ *
+ * Unlike `FocusRing` this takes arbitrary slices, because the summary panel
+ * switches between categories, projects and apps — a fixed three-arc ring
+ * cannot express any of those. Slices past `limit` are folded into one "Other"
+ * arc rather than drawn as unreadable slivers.
+ */
+export const Donut = memo(function Donut({
+  slices,
+  limit = 5,
+  emptyLabel = 'Nothing tracked yet.',
+}: {
+  slices: Slice[]
+  limit?: number
+  emptyLabel?: string
+}) {
+  const size = 112
+  const stroke = 12
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const GAP = 3
+
+  const { rows, total } = useMemo(() => {
+    const sorted = [...slices].filter((s) => s.seconds > 0).sort((a, b) => b.seconds - a.seconds)
+    const head = sorted.slice(0, limit)
+    const tail = sorted.slice(limit)
+    if (tail.length) {
+      head.push({
+        key: '__other',
+        label: `${tail.length} more`,
+        seconds: tail.reduce((sum, s) => sum + s.seconds, 0),
+        color: 'var(--surface-4)',
+      })
+    }
+    return { rows: head, total: head.reduce((sum, s) => sum + s.seconds, 0) }
+  }, [slices, limit])
+
+  const arcs = useMemo(() => {
+    let offset = 0
+    return rows.map((row) => {
+      const share = total > 0 ? row.seconds / total : 0
+      const length = share * circumference
+      const arc = {
+        ...row,
+        share,
+        // A sliver still has to be visible, so short arcs lose their gap
+        // rather than being eaten by it.
+        dash: Math.max(0.5, length - (length > GAP * 2 ? GAP : 0)),
+        offset: -offset * circumference,
+      }
+      offset += share
+      return arc
+    })
+  }, [rows, total, circumference])
+
+  if (!rows.length) return <Empty title={emptyLabel} />
+
+  return (
+    <div className="donut-wrap">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Breakdown">
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="var(--surface-3)"
+            strokeWidth={stroke}
+          />
+          {arcs.map((a) =>
+            a.share > 0.001 ? (
+              <circle
+                key={a.key}
+                className="ring-arc"
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                fill="none"
+                stroke={a.color}
+                strokeWidth={stroke}
+                strokeLinecap="butt"
+                strokeDasharray={`${a.dash} ${circumference - a.dash}`}
+                strokeDashoffset={a.offset}
+              />
+            ) : null
+          )}
+        </g>
+        <text x="50%" y="49%" textAnchor="middle" className="donut-center">
+          {duration(total)}
+        </text>
+        <text x="50%" y="63%" textAnchor="middle" className="ring-caption">
+          tracked
+        </text>
+      </svg>
+      <div className="donut-legend">
+        {arcs.map((a) => (
+          <div className="legend-row" key={a.key}>
+            <i style={{ background: a.color }} />
+            <span className="legend-name" title={a.label}>
+              {a.label}
+            </span>
+            <b>{duration(a.seconds)}</b>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+})
+
+/** One horizontal stacked bar with a legend under it. */
+export const StackedBar = memo(function StackedBar({ slices }: { slices: Slice[] }) {
+  const rows = useMemo(() => slices.filter((s) => s.seconds > 0), [slices])
+  const total = useMemo(() => rows.reduce((sum, s) => sum + s.seconds, 0), [rows])
+
+  if (!total) return <Empty title="Nothing tracked yet." />
+
+  return (
+    <div className="stacked">
+      <div className="stacked-bar">
+        {rows.map((row) => (
+          <i
+            key={row.key}
+            style={{ width: `${(row.seconds / total) * 100}%`, background: row.color }}
+            title={`${row.label} · ${duration(row.seconds)}`}
+          />
+        ))}
+      </div>
+      <div className="stacked-legend">
+        {rows.map((row) => (
+          <div className="legend-row" key={row.key}>
+            <i style={{ background: row.color }} />
+            <span className="legend-name">{row.label}</span>
+            <b>{duration(row.seconds)}</b>
+          </div>
+        ))}
       </div>
     </div>
   )

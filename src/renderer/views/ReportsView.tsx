@@ -7,7 +7,7 @@ import { RefreshButton } from '../components/RefreshButton'
 import { duration, longDate, percent } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
 
-export function WeekView({ app }: { app: OpenTimeState }) {
+export function ReportsView({ app, onOpenDay }: { app: OpenTimeState; onOpenDay(): void }) {
   const settings = app.settings
 
   const days = useMemo(
@@ -25,10 +25,10 @@ export function WeekView({ app }: { app: OpenTimeState }) {
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">This week</h1>
+          <h1 className="page-title">Reports</h1>
           <p className="page-sub">
-            {duration(week.totalSeconds)} tracked over {days.filter((d) => d.totalSeconds).length}{' '}
-            active days
+            The trailing week — {duration(week.totalSeconds)} tracked over{' '}
+            {days.filter((d) => d.totalSeconds).length} active days
           </p>
         </div>
         <RefreshButton onRefresh={() => void app.refresh()} />
@@ -70,13 +70,16 @@ export function WeekView({ app }: { app: OpenTimeState }) {
         <div className="card">
           <h2 className="card-title">
             Daily breakdown
-            <span className="hint">Click a day to open it</span>
+            <span className="hint">Click a day to open it on the calendar</span>
           </h2>
           <WeekChart
             days={days}
             selected={app.selectedDay}
             dayStartHour={settings.dayStartHour}
-            onSelect={app.selectDay}
+            onSelect={(key) => {
+              app.selectDay(key)
+              onOpenDay()
+            }}
           />
         </div>
 
@@ -97,9 +100,15 @@ export function WeekView({ app }: { app: OpenTimeState }) {
                 key={d.dayKey}
                 role="button"
                 tabIndex={0}
-                onClick={() => app.selectDay(d.dayKey)}
+                onClick={() => {
+                  app.selectDay(d.dayKey)
+                  onOpenDay()
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') app.selectDay(d.dayKey)
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    app.selectDay(d.dayKey)
+                    onOpenDay()
+                  }
                 }}
               >
                 <div>

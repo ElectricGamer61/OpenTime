@@ -20,7 +20,7 @@ Start with `README.md` — it documents the stack, architecture, performance rat
 
 ## Testing and running without a display
 
-- `npm test` — 241 tests, node environment, no Electron needed.
+- `npm test` — 278 tests, node environment, no Electron needed.
 - `npm run typecheck` — covers `src/` **and** `tests/`.
 - To exercise the **main process** end to end, run `npx electron . --user-data-dir=<tmp> --disable-gpu`. Always pass `--user-data-dir`: without it the app reads and migrates the real `~/.config/OpenTime` store. WSL needs `--disable-gpu` or Electron may abort on GPU init.
 - The browser fallback client in `src/renderer/state/client.ts` implements the *whole* `OpenTimeApi`. Adding an IPC method means adding it there too, or the screenshot/preview path breaks.
@@ -29,9 +29,21 @@ Start with `README.md` — it documents the stack, architecture, performance rat
 
 **Offscreen capture lies unless you make it repaint.** `capturePage()` on a `show: false` window returns whatever the offscreen compositor last rastered, which is not necessarily the current DOM. The script therefore waits for finite animations to finish, calls `webContents.invalidate()`, and asserts the expected tab is actually `.active` before capturing — without all three it silently produced four screenshots of the wrong tab, or a correct main pane beside a stale sidebar. If a screenshot ever disagrees with the code, suspect this before suspecting the UI. It also cannot be scrolled reliably; to see below the fold, open a taller `BrowserWindow` instead of setting `scrollTop`.
 
+`invalidate()` is not enough for something *newly added* to the page, such as an opened popover or drawer: it repaints, but the new layer never lands in the capture. A one-pixel `win.setSize()` there and back forces a full raster and is the only thing that reliably worked.
+
+## Renderer shape
+
+`App.tsx` is the shell: its own title bar (the native one is hidden on macOS and Windows — see `createWindow`), a labelled sidebar, and one view. **The calendar view manages its own scrolling columns; every other view renders inside the `.page` wrapper App provides.** Views return fragments, so a `:not(.calendar)` child selector gives one scroll container per top-level element — that is what the wrapper exists to prevent.
+
+The calendar's data path is `lib/entries.ts` → `DayGrid` → `EntryPopover`, and `lib/palette.ts` decides colour. Two invariants live in `entries.ts` and are pinned by `tests/entries.test.ts`: only **adjacent** sessions fold into one entry (folding across an intervening category would claim the minutes in between), and an entry's duration is the **sum of its sessions**, never end-minus-start — the visible block spans the sub-gaps, the number does not.
+
+Column assignment is by *label*, not by collision: OpenTime's sessions never overlap, so packing by collision yields one column and loses the point of a grid. Labels past the cap share the last column, which is safe for exactly that reason.
+
 ## UI conventions
 
-`src/renderer/styles.css` holds the whole design system as tokens (colour, the `--gap-*` spacing scale, radii, `--fast`/`--med`/`--slow` durations). Use the tokens rather than literals so a light theme stays a token swap, and keep saturated colour to small areas — the productivity tokens are tuned for 8px swatches and overwhelm the page when they fill a bar or a timeline block, so large fills use the washes in `Charts.tsx` / `blockFill()`. Icons are inline SVG in `components/Icons.tsx` (24×24, 1.7px round strokes, no binary assets — the renderer's CSP allows no external sources). Every "nothing here" surface goes through `components/Empty.tsx`. All motion must survive `prefers-reduced-motion`, which the stylesheet disables globally at the bottom.
+`src/renderer/styles.css` holds the whole design system as tokens (colour, the `--gap-*` spacing scale, radii, `--fast`/`--med`/`--slow` durations). Use the tokens rather than literals so a light theme stays a token swap. Keep saturated colour to small areas — meters, swatches, arcs. **The one exception is a calendar block**, which is painted in solid category colour because on an hour grid the fill is the only thing carrying identity, and a 13% wash of eight hues is eight shades of grey; the accompanying left-edge bar comes from `edgeOn()` so it stays the same hue. Icons are inline SVG in `components/Icons.tsx` (24×24, 1.7px round strokes, no binary assets — the renderer's CSP allows no external sources). Every "nothing here" surface goes through `components/Empty.tsx`. All motion must survive `prefers-reduced-motion`, which the stylesheet disables globally at the bottom.
+
+**`position: fixed` is not viewport-relative inside a view.** `.view` animates a transform with `fill: both`, which permanently establishes a containing block for fixed descendants — an overlay rendered in place lands offset by the sidebar width and the title-bar height, which reads as a co-ordinate bug and is a stacking one. Every overlay (`EntryPopover`, the correction drawer) is therefore `createPortal`ed to `document.body`. New overlays must do the same.
 
 Avoid `backdrop-filter` on opaque surfaces: it buys nothing visually and its extra composited layer renders a frame behind the rest of the shell during a view transition.
 

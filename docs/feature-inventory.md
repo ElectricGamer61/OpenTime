@@ -56,17 +56,38 @@ waiting out the heartbeat.
 Away time is recorded as an explicit block, and (see §7) can be claimed back as
 work after the fact.
 
-## 3. Timeline
+## 3. Day calendar
 
 | | |
 |---|---|
 | Status | **Shipped** |
-| Where | `src/renderer/components/Timeline.tsx`, `src/core/aggregate.ts` |
+| Where | `src/renderer/components/DayGrid.tsx`, `src/renderer/lib/entries.ts` |
 
-A vertical day timeline with the calendar overlaid beside it. Geometry is
-precomputed as fractions by `buildTimeline`, so rendering is a multiply — no
-layout measurement, no resize observers. Sessions *and* away blocks are
+An hour grid with a column per kind of work, a rounded block per entry, and a
+detail card behind a click. Geometry is a multiply from the hour scale — no
+layout measurement, no resize observers. Sessions, away blocks *and* calendar
+events are all drawn as entries, and sessions and away blocks are both
 selectable, because both are correctable.
+
+Two things are worth naming:
+
+- **Entries are folded, numbers are not.** Adjacent sessions in the same group
+  fold into one block so a morning of real work is a handful of readable blocks
+  rather than fifty slivers. Only *adjacent* sessions fold — an intervening
+  category ends the run, because merging across it would claim the minutes in
+  between — and an entry's duration is the sum of its sessions, never
+  end-minus-start. The block spans the sub-gaps; the number does not.
+- **Columns are labels, not collisions.** Sessions never overlap in time, so
+  collision packing would produce a single column and lose the thing a grid is
+  for. Columns are the groups the day is made of, ordered by time spent, with
+  the smallest sharing the last column — safe precisely because they cannot
+  overlap. The grouping (category / project / app) is a tab above the grid and
+  drives the summary column's donut at the same time.
+
+**Not modelled:** a per-entry billable amount. There are no rates and no clients
+in the data model (§5 — projects are the closest concept), so the slot a
+commercial tracker puts money in is simply absent rather than filled with a
+plausible number.
 
 ## 4. Categorisation and rules
 
@@ -167,7 +188,9 @@ already selectable in Settings for it.
 
 Today and a trailing week are built. Arbitrary ranges are supported by the
 storage layer and by export (`fromKey`/`toKey`), but there is no month or
-custom-range **view** yet. That is the largest remaining UI gap.
+custom-range **view** yet. That is the largest remaining UI gap, and the
+calendar's range control says so out loud: Month and Year are rendered
+disabled rather than hidden, so the gap is visible instead of pretended away.
 
 ## 10. Goals
 

@@ -16,9 +16,12 @@ const root = path.dirname(__dirname)
 
 /** Tab label to click, and the filename README already links to. */
 const TABS = [
-  { tab: 'Today', file: 'today.png' },
-  { tab: 'This week', file: 'week.png' },
-  { tab: 'Projects & rules', file: 'projects.png' },
+  { tab: 'Calendar', file: 'calendar.png' },
+  { tab: 'Dashboard', file: 'dashboard.png' },
+  { tab: 'Activity', file: 'activity.png' },
+  { tab: 'Reports', file: 'reports.png' },
+  { tab: 'Projects', file: 'projects.png' },
+  { tab: 'Goals', file: 'goals.png' },
   { tab: 'Settings', file: 'settings.png' },
 ]
 
@@ -32,7 +35,7 @@ const win = new BrowserWindow({
   width: 1440,
   height: 950,
   show: false,
-  backgroundColor: '#0b0e14',
+  backgroundColor: '#0d0d0f',
   // No preload on purpose: without the IPC bridge the renderer falls back to
   // its self-contained demo client, so this captures the full UI without
   // needing the tracking engine running behind it.

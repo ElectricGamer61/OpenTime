@@ -1,43 +1,47 @@
-/* OpenTime — original visual identity.
-   Ink-dark surface, one cool accent, generous spacing, no chrome for its own
-   sake. All colour is expressed as tokens so a light theme is a token swap.
+/* OpenTime — visual identity.
+   Near-black surface, one violet accent, dense information, no chrome for its
+   own sake. All colour is expressed as tokens so a light theme is a token swap.
 
-   The feel this file aims for: calm, quiet, premium. Nothing on screen should
-   shout. Colour *ranks* things rather than decorating them, so the saturated
-   tokens are reserved for small areas (a meter, a swatch, an arc) and the
-   large areas — cards, bars, timeline blocks — get washes derived from them.
+   The feel this file aims for: a professional desktop calendar. Panels are a
+   step lighter than the page so the three columns separate without borders
+   doing the work; type is small and tight; numbers are set large and bold
+   against uppercase micro-labels.
+
+   One deliberate exception to the old "washes for large areas" rule: calendar
+   blocks are painted in *solid* category colour. On an hour grid the fill is
+   the only thing carrying identity at a glance, and a 13% wash of eight hues is
+   eight shades of grey. Everything else — meters, swatches, arcs — still keeps
+   saturation to small areas.
    Motion is short, eased, and always opt-out via prefers-reduced-motion. */
 
 :root {
-  --bg: #0a0c12;
-  --bg-glow-1: rgba(91, 140, 255, 0.07);
-  --bg-glow-2: rgba(192, 132, 252, 0.05);
+  --bg: #0d0d0f;
 
-  --surface: #10141c;
-  --surface-2: #151a24;
-  --surface-3: #1b2230;
-  --surface-4: #232b3a;
-  --line: #232b3a;
-  --line-soft: #191f2a;
+  --surface: #151517;
+  --surface-2: #1a1a1d;
+  --surface-3: #212126;
+  --surface-4: #2c2c33;
+  --line: #26262c;
+  --line-soft: #1e1e22;
 
-  --text: #e9eef6;
-  --text-dim: #97a4b8;
-  --text-faint: #667488;
+  --text: #f3f3f5;
+  --text-dim: #8a8a92;
+  --text-faint: #63636b;
 
-  --accent: #5b8cff;
-  --accent-hi: #7ba3ff;
-  --accent-soft: rgba(91, 140, 255, 0.14);
-  --accent-line: rgba(91, 140, 255, 0.32);
+  --accent: #7c5cff;
+  --accent-hi: #9a80ff;
+  --accent-soft: rgba(124, 92, 255, 0.15);
+  --accent-line: rgba(124, 92, 255, 0.34);
 
-  /* Legible but pulled back from neon — these fill large areas. */
-  --productive: #46cf87;
-  --neutral: #7386a0;
-  --distracting: #f2687f;
-  --idle: #222a37;
-  --meeting: #b586f5;
+  /* Saturated enough to be read as a solid block fill, not as a pastel. */
+  --productive: #3ecf6e;
+  --neutral: #6b6b70;
+  --distracting: #f2545b;
+  --idle: #1f1f23;
+  --meeting: #8b7bd8;
 
-  --productive-wash: rgba(70, 207, 135, 0.13);
-  --distracting-wash: rgba(242, 104, 127, 0.13);
+  --productive-wash: rgba(62, 207, 110, 0.13);
+  --distracting-wash: rgba(242, 84, 91, 0.13);
 
   /* Spacing scale — every gap comes from here so the vertical rhythm stays
      consistent across views. */
@@ -47,13 +51,19 @@
   --gap-4: 22px;
   --gap-5: 30px;
 
-  --radius: 14px;
-  --radius-lg: 18px;
-  --radius-sm: 9px;
+  /* Nothing sharp-cornered, nothing pill-shaped except segmented controls and
+     chips — which opt in explicitly. */
+  --radius: 10px;
+  --radius-lg: 12px;
+  --radius-sm: 8px;
   --radius-xs: 6px;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.28);
+  --titlebar: 44px;
+  --rail: 178px;
+  --summary: 296px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 14px 38px rgba(0, 0, 0, 0.45);
 
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
@@ -170,84 +180,288 @@ select option {
   background-clip: content-box;
 }
 
-/* ── Layout ─────────────────────────────────────────────────────────────── */
+/* ── Shell ──────────────────────────────────────────────────────────────── */
 
 .app {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-rows: var(--titlebar) minmax(0, 1fr);
   height: 100%;
-  /* Two very wide, very faint pools of colour behind the whole shell. They
-     stop the dark surface reading as flat black without ever being
-     identifiable as a gradient. */
-  background:
-    radial-gradient(900px 520px at 12% -10%, var(--bg-glow-1), transparent 70%),
-    radial-gradient(760px 480px at 96% 4%, var(--bg-glow-2), transparent 70%),
-    var(--bg);
+  background: var(--bg);
 }
 
-.rail {
-  /* Deliberately no backdrop-filter: the rail sits on an opaque background,
-     so a blur costs a composited layer and buys no visible effect — and the
-     extra layer is slow enough to render a frame behind the rest of the
-     shell during a view transition. */
-  background: linear-gradient(180deg, rgba(21, 26, 36, 0.82), rgba(16, 20, 28, 0.72));
-  border-right: 1px solid var(--line-soft);
-  display: flex;
-  flex-direction: column;
-  padding: 16px 14px 14px;
-  gap: 3px;
+/* The window's own title bar. Everything in it is a drag region except the
+   controls, which opt back out — otherwise the bar is only draggable in the
+   gaps between them. */
+.titlebar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg);
   -webkit-app-region: drag;
+  user-select: none;
 }
 
-.rail > * {
+/* macOS insets its traffic lights into the left of the bar; this is the room
+   they need. Elsewhere the platform draws its own frame above and the space
+   simply balances the right-hand controls. */
+.titlebar-left {
+  min-width: 76px;
+}
+
+.titlebar-mark {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.36em;
+  /* The tracking pushes the mark visually right of centre; the indent takes
+     the trailing letter-space back off. */
+  text-indent: 0.36em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+}
+
+.titlebar-right > * {
   -webkit-app-region: no-drag;
 }
 
-.brand {
+.titlebar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-faint);
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+
+.titlebar-link:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.track-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--text-dim);
+  transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.track-chip:hover {
+  border-color: var(--surface-4);
+  color: var(--text);
+}
+
+.track-chip.tracking {
+  color: var(--productive);
+  border-color: rgba(62, 207, 110, 0.28);
+  background: var(--productive-wash);
+}
+
+.track-chip.paused {
+  color: var(--accent-hi);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  min-height: 0;
+  transition: grid-template-columns var(--med) var(--ease);
+}
+
+.app.rail-collapsed .shell {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px 10px;
+  background: var(--bg);
+  border-right: 1px solid var(--line-soft);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rail-top {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 6px 8px 22px;
+  gap: 4px;
+  padding: 0 0 10px;
 }
 
-.brand-mark {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  filter: drop-shadow(0 2px 8px rgba(91, 140, 255, 0.35));
+.workspace-wrap {
+  position: relative;
+  min-width: 0;
+  flex: 1;
 }
 
-.brand-name {
-  font-size: 15.5px;
-  font-weight: 650;
-  letter-spacing: -0.015em;
+.workspace {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+  transition: background var(--fast) var(--ease);
 }
 
-.brand-name span {
-  color: var(--accent);
+.workspace:hover,
+.workspace.open {
+  background: var(--surface-2);
 }
 
-.rail-section {
-  font-size: 10.5px;
-  font-weight: 650;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+.workspace-avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+}
+
+.workspace-avatar .brand-mark {
+  width: 15px;
+  height: 15px;
+  filter: none;
+}
+
+.workspace-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-caret {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
   color: var(--text-faint);
-  padding: 2px 11px 8px;
+  margin-left: auto;
+}
+
+.workspace-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 264px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  animation: pop-in var(--fast) var(--ease) both;
+}
+
+.workspace-menu-head {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.workspace-path {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-faint);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-xs);
+  padding: 7px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--radius-xs);
+  font-size: 12.5px;
+  color: var(--text-dim);
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.workspace-action:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.workspace-menu-foot {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.rail-collapse {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.app.rail-collapsed .rail-collapse svg {
+  transform: rotate(180deg);
+}
+
+.rail-nav {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Groups are separated by a hairline rather than a caption — captions on a
+   seven-item rail are noise. */
+.rail-group + .rail-group {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line-soft);
 }
 
 .nav-item {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   width: 100%;
-  padding: 9px 11px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   color: var(--text-dim);
   font-weight: 500;
-  font-size: 13.5px;
+  font-size: 13px;
   text-align: left;
+  white-space: nowrap;
   transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 
@@ -272,20 +486,20 @@ select option {
 }
 
 .nav-item.active {
-  background: var(--accent-soft);
+  background: var(--surface-2);
   color: var(--text);
   font-weight: 550;
 }
 
 .nav-item.active::before {
-  height: 17px;
+  height: 18px;
 }
 
 .nav-item .nav-icon {
-  width: 17px;
-  height: 17px;
-  flex: 0 0 17px;
-  opacity: 0.7;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  opacity: 0.66;
   transition: opacity var(--fast) var(--ease), transform var(--med) var(--ease-spring);
 }
 
@@ -302,14 +516,33 @@ select option {
   transform: scale(0.9);
 }
 
+.nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapsed, only the icons remain. The labels are clipped rather than removed
+   so the rail animates to width instead of reflowing. */
+.app.rail-collapsed .nav-label,
+.app.rail-collapsed .workspace-name,
+.app.rail-collapsed .workspace-caret,
+.app.rail-collapsed .rail-meta {
+  display: none;
+}
+
+.app.rail-collapsed .rail-footer {
+  padding-inline: 6px;
+}
+
 .rail-footer {
   margin-top: auto;
-  padding: 14px 11px 4px;
+  padding: 11px 10px 2px;
   border-top: 1px solid var(--line-soft);
   color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: 11px;
   display: grid;
-  gap: 7px;
+  gap: 6px;
 }
 
 .rail-status {
@@ -318,6 +551,7 @@ select option {
   gap: 8px;
   color: var(--text-dim);
   font-weight: 550;
+  font-size: 11.5px;
 }
 
 .rail-status .beat {
@@ -340,10 +574,10 @@ select option {
 @keyframes beat {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(70, 207, 135, 0.5);
+    box-shadow: 0 0 0 0 rgba(62, 207, 110, 0.5);
   }
   60% {
-    box-shadow: 0 0 0 6px rgba(70, 207, 135, 0);
+    box-shadow: 0 0 0 6px rgba(62, 207, 110, 0);
   }
 }
 
@@ -351,6 +585,7 @@ select option {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
   font-variant-numeric: tabular-nums;
 }
 
@@ -359,8 +594,8 @@ select option {
 }
 
 /* Adapter names can be long ("demo (browser preview)"). Truncating keeps the
-   footer a fixed three lines instead of reflowing the rail as the engine
-   changes state; the full value stays available on hover. */
+   footer a fixed height instead of reflowing the rail as the engine changes
+   state; the full value stays available on hover. */
 .rail-meta span:last-child {
   color: var(--text-dim);
   min-width: 0;
@@ -369,21 +604,48 @@ select option {
   white-space: nowrap;
 }
 
+/* ── Main region ────────────────────────────────────────────────────────── */
+
 .main {
-  overflow-y: auto;
-  padding: 0 var(--gap-5) 56px;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
 }
 
 /* Each tab's content fades up on mount, so switching views reads as a move
    rather than a repaint. Keyed on the tab in App.tsx. */
 .view {
-  animation: view-in var(--slow) var(--ease) both;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  animation: view-in var(--med) var(--ease) both;
+}
+
+/* Views other than the calendar render inside `.page`, which is the scroll
+   container and carries the page padding. It has to be one element rather than
+   a `:not(.calendar)` child selector, because most views return a fragment and
+   would otherwise get one scroll container per top-level element. */
+.page {
+  overflow-y: auto;
+  padding: 0 var(--gap-4) 48px;
 }
 
 @keyframes view-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
@@ -399,29 +661,37 @@ select option {
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--gap-3);
-  padding: 26px 0 18px;
+  padding: 22px 0 16px;
   margin-bottom: var(--gap-1);
-  background: linear-gradient(180deg, var(--bg) 62%, rgba(10, 12, 18, 0));
-  backdrop-filter: blur(10px);
+  background: linear-gradient(180deg, var(--bg) 62%, rgba(13, 13, 15, 0));
 }
 
 .page-title {
-  font-size: 23px;
+  font-size: 21px;
   font-weight: 650;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.022em;
   margin: 0;
 }
 
 .page-sub {
   color: var(--text-dim);
   margin: 3px 0 0;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .page-sub .sep {
   color: var(--text-faint);
   padding: 0 3px;
 }
+
+.prose {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.62;
+  max-width: 66ch;
+}
+
 
 /* ── Primitives ─────────────────────────────────────────────────────────── */
 
@@ -473,6 +743,12 @@ select option {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+/* Reading-width pages — a goal list set to the full width of a 1440px window
+   is a line nobody's eye tracks back across. */
+.grid.narrow {
+  max-width: 780px;
+}
+
 @media (max-width: 1080px) {
   .cols-2 {
     grid-template-columns: minmax(0, 1fr);
@@ -516,15 +792,17 @@ select option {
   border-color: var(--line);
 }
 
+/* White ink, not dark: the violet accent is a dark hue, and the near-black
+   label it used to carry against it was barely readable. */
 .btn.primary {
   background: linear-gradient(180deg, var(--accent-hi), var(--accent));
   border-color: transparent;
-  color: #071022;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 4px 14px rgba(91, 140, 255, 0.22);
+  color: #ffffff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 4px 14px rgba(124, 92, 255, 0.28);
 }
 
 .btn.primary:hover {
-  background: linear-gradient(180deg, #8fb0ff, var(--accent-hi));
+  background: linear-gradient(180deg, #ab95ff, var(--accent-hi));
   border-color: transparent;
 }
 
@@ -563,6 +841,48 @@ select option {
   opacity: 0.9;
 }
 
+/* A square button that is only its glyph. Used wherever a labelled button
+   would crowd a dense row: the rail's collapse control, date navigation, and
+   the popover's edit / delete / close cluster. */
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  border-radius: var(--radius-xs);
+  color: var(--text-faint);
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease),
+    transform var(--fast) var(--ease-spring);
+}
+
+.icon-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  transform: none;
+}
+
+.icon-btn:disabled:hover {
+  background: none;
+  color: var(--text-faint);
+}
+
+/* Destructive icon actions stay quiet until the pointer is actually on them —
+   see the note on `.btn.danger`. */
+.icon-btn.danger:hover {
+  color: var(--distracting);
+  background: var(--distracting-wash);
+}
+
 .btn.spin .btn-icon {
   animation: spin 650ms var(--ease);
 }
@@ -596,13 +916,13 @@ select option {
 
 .pill.live {
   background: var(--productive-wash);
-  border-color: rgba(70, 207, 135, 0.24);
+  border-color: rgba(62, 207, 110, 0.26);
   color: var(--productive);
 }
 
 .pill.warn {
   background: var(--distracting-wash);
-  border-color: rgba(242, 104, 127, 0.24);
+  border-color: rgba(242, 84, 91, 0.26);
   color: var(--distracting);
 }
 
@@ -618,7 +938,7 @@ select option {
   align-items: flex-start;
   padding: 12px 15px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(180deg, rgba(91, 140, 255, 0.11), rgba(91, 140, 255, 0.05));
+  background: linear-gradient(180deg, rgba(124, 92, 255, 0.11), rgba(124, 92, 255, 0.05));
   border: 1px solid var(--accent-line);
   color: var(--text-dim);
   font-size: 12.5px;
@@ -697,7 +1017,7 @@ select option {
   background: linear-gradient(
     100deg,
     transparent 30%,
-    rgba(91, 140, 255, 0.055) 48%,
+    rgba(124, 92, 255, 0.055) 48%,
     transparent 66%
   );
   transform: translateX(-60%);
@@ -732,7 +1052,7 @@ select option {
   flex: 0 0 52px;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 50% 40%, rgba(91, 140, 255, 0.26), var(--accent-soft));
+  background: radial-gradient(circle at 50% 40%, rgba(124, 92, 255, 0.26), var(--accent-soft));
   color: var(--accent-hi);
   position: relative;
 }
@@ -878,22 +1198,140 @@ select option {
   transition: width var(--slow) var(--ease);
 }
 
-/* ── Timeline ───────────────────────────────────────────────────────────── */
+/* ── Calendar: the three-column day view ────────────────────────────────── */
 
-.timeline {
+.calendar {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) minmax(0, 156px);
+  grid-template-columns: minmax(0, 1fr) var(--summary);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.calendar-main {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The filter row above the grid. */
+.grid-tabs {
+  display: flex;
+  align-items: center;
   gap: var(--gap-2);
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.grid-tabs-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text-faint);
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-xs);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-faint);
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.tab:hover {
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+.tab.on {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 550;
+}
+
+.tab.on svg {
+  color: var(--accent);
+}
+
+/* The date row. */
+.grid-datebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  padding: 14px 16px 12px;
+}
+
+.grid-date {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: -0.018em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid-datenav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.range-seg button {
+  min-width: 52px;
+}
+
+.notice {
+  margin: 0 16px var(--gap-2);
+}
+
+.grid-scroll {
+  overflow-y: auto;
+  padding: 0 16px 40px;
+  min-height: 0;
+}
+
+.daygrid-empty {
+  padding-top: 48px;
+}
+
+/* ── The hour grid ──────────────────────────────────────────────────────── */
+
+.daygrid {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 8px;
+  position: relative;
+  /* Hour labels sit on the line they name, so the first one needs room above
+     it and the last needs room below. */
+  padding: 10px 0 4px;
+}
+
+.daygrid-ruler {
   position: relative;
 }
 
-.timeline-hours {
-  position: relative;
-}
-
-.hour-tick {
+.daygrid-hour {
   position: absolute;
-  right: 2px;
+  right: 0;
   transform: translateY(-50%);
   font-size: 11px;
   color: var(--text-faint);
@@ -901,15 +1339,12 @@ select option {
   white-space: nowrap;
 }
 
-.timeline-track {
+.daygrid-track {
   position: relative;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 30%), var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  min-width: 0;
 }
 
-.hour-line {
+.daygrid-line {
   position: absolute;
   left: 0;
   right: 0;
@@ -917,22 +1352,18 @@ select option {
   background: var(--line-soft);
 }
 
-.hour-line.half {
-  background: linear-gradient(90deg, transparent, rgba(35, 43, 58, 0.5) 10%, transparent 94%);
-}
-
 /* The live "you are here" marker. */
-.now-line {
+.daygrid-now {
   position: absolute;
-  left: 0;
+  left: -6px;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, var(--accent), rgba(91, 140, 255, 0.12));
-  z-index: 3;
+  background: linear-gradient(90deg, var(--accent), rgba(124, 92, 255, 0.1));
+  z-index: 6;
   pointer-events: none;
 }
 
-.now-line::before {
+.daygrid-now::before {
   content: '';
   position: absolute;
   left: 0;
@@ -942,55 +1373,101 @@ select option {
   border-radius: 999px;
   background: var(--accent);
   transform: translateY(-50%);
-  box-shadow: 0 0 8px rgba(91, 140, 255, 0.8);
+  box-shadow: 0 0 8px rgba(124, 92, 255, 0.85);
 }
 
-.block {
+/* One entry. Solid category fill, a brighter bar of the same hue down its left
+   edge, and as much of title / range / apps / duration as the height allows. */
+.entry {
   position: absolute;
-  left: 6px;
-  right: 6px;
-  border-radius: var(--radius-xs);
-  padding: 3px 9px;
-  line-height: 1.35;
+  display: block;
   overflow: hidden;
-  cursor: pointer;
-  border-left: 3px solid transparent;
-  transition: filter var(--fast) var(--ease), transform var(--fast) var(--ease),
-    box-shadow var(--fast) var(--ease);
+  padding: 5px 8px 5px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  color: var(--ink);
+  text-align: left;
+  line-height: 1.32;
+  transition: filter var(--fast) var(--ease), box-shadow var(--fast) var(--ease),
+    transform var(--fast) var(--ease);
 }
 
-.block:hover {
-  filter: brightness(1.28);
-  transform: translateX(2px);
-  box-shadow: var(--shadow-sm);
-  z-index: 2;
+/* The signature stripe: same hue as the fill, a step brighter, inset so it
+   reads as part of the block rather than as its border. The inset is small
+   enough that a 15px block still shows a bar. */
+.entry-edge {
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--edge);
 }
 
-.block.selected {
-  box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-soft);
-  z-index: 2;
+.entry:hover {
+  filter: brightness(1.1);
+  z-index: 4;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
 }
 
-.block-label {
-  font-size: 11.5px;
+.entry.selected {
+  z-index: 5;
+  box-shadow: 0 0 0 1.5px var(--text), 0 8px 22px var(--glow);
+}
+
+.entry.slim {
+  padding: 1px 8px 1px 12px;
+  line-height: 1.25;
+}
+
+.entry.slim .entry-title {
+  font-size: 11px;
+}
+
+.entry-title {
+  display: block;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: -0.005em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.block-sub {
+.entry-range,
+.entry-apps {
+  display: block;
   font-size: 10.5px;
-  color: var(--text-dim);
+  color: var(--sub-ink);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Away time should recede, not compete. A flat wash plus a very low-contrast
-   diagonal reads as "nothing happened here" without the old barber-pole. */
-.block.idle {
+.entry-apps {
+  margin-top: 1px;
+  opacity: 0.82;
+}
+
+/* Bottom-right, like a duration readout on a calendar event. */
+.entry-duration {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--sub-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Away time should recede, not compete: it is the one block that is about
+   absence, so it is drawn as an outline rather than a fill. */
+.entry.away {
   background: var(--idle);
+  color: var(--text-dim);
+  border: 1px solid var(--line);
   background-image: repeating-linear-gradient(
     135deg,
     rgba(255, 255, 255, 0.022),
@@ -998,80 +1475,633 @@ select option {
     transparent 7px,
     transparent 14px
   );
-  border-left-color: #313b4c;
+}
+
+.entry.away .entry-range,
+.entry.away .entry-duration,
+.entry.away .entry-apps {
   color: var(--text-faint);
 }
 
-.block.idle .block-sub {
-  color: var(--text-faint);
+/* Scheduled, not tracked — so it is drawn as a plan rather than a record. */
+.entry.event {
+  background: rgba(139, 123, 216, 0.14);
+  border: 1px dashed rgba(139, 123, 216, 0.5);
+  color: #d6cdf7;
 }
 
-.timeline-events {
-  position: relative;
+.entry.event .entry-range,
+.entry.event .entry-duration {
+  color: rgba(214, 205, 247, 0.7);
 }
 
-.event {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border-radius: var(--radius-xs);
-  padding: 4px 9px;
-  background: linear-gradient(135deg, rgba(181, 134, 245, 0.16), rgba(181, 134, 245, 0.08));
-  border-left: 3px solid var(--meeting);
+/* ── Block detail popover ───────────────────────────────────────────────── */
+
+.popover {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  animation: pop-in var(--fast) var(--ease) both;
+}
+
+.popover-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.popover-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 999px;
+}
+
+.popover-workspace {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-dim);
+  min-width: 0;
   overflow: hidden;
-  transition: filter var(--fast) var(--ease), transform var(--fast) var(--ease);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.event:hover {
-  filter: brightness(1.2);
-  transform: translateX(-2px);
+.popover-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
-.event-title {
-  font-size: 11.5px;
+.popover-ring svg {
+  display: block;
+}
+
+.popover-ring b {
+  position: absolute;
+  font-size: 9.5px;
+  letter-spacing: -0.02em;
+  font-weight: 650;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.popover-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.popover-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--distracting-wash);
+  border: 1px solid rgba(242, 84, 91, 0.28);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.popover-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-2);
+}
+
+.popover-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popover-duration {
+  font-size: 12.5px;
   font-weight: 600;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.popover-when {
+  margin-top: -6px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.popover-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.event-time {
-  font-size: 10.5px;
+.chip.productive {
+  background: var(--productive-wash);
+  border-color: rgba(62, 207, 110, 0.28);
+  color: var(--productive);
+}
+
+.chip.distracting {
+  background: var(--distracting-wash);
+  border-color: rgba(242, 84, 91, 0.28);
+  color: var(--distracting);
+}
+
+.chip.warn {
+  background: rgba(224, 168, 62, 0.12);
+  border-color: rgba(224, 168, 62, 0.3);
+  color: #e0a83e;
+}
+
+.popover-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  font-style: italic;
+}
+
+.popover-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--text-dim);
 }
 
-.timeline-col-head {
+.popover-section {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
   font-size: 10.5px;
-  letter-spacing: 0.08em;
+  font-weight: 650;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-faint);
-  margin-bottom: 7px;
-  font-weight: 650;
 }
 
-.timeline-legend {
-  display: flex;
-  gap: var(--gap-3);
-  flex-wrap: wrap;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line-soft);
+.popover-apps {
+  display: grid;
+  gap: 7px;
+}
+
+.popover-app {
+  display: grid;
+  grid-template-columns: 32px 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
   font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.popover-app b {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.popover-app-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.popover-app-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.popover-app-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popover-app-time {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Summary panel ──────────────────────────────────────────────────────── */
+
+.summary {
+  display: grid;
+  align-content: start;
+  gap: var(--gap-3);
+  padding: 12px 16px 40px;
+  border-left: 1px solid var(--line-soft);
+  background: var(--surface);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding-bottom: 2px;
+}
+
+.summary-crumb {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-dim);
+}
+
+.summary-crumb svg {
   color: var(--text-faint);
 }
 
-.timeline-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.summary-crumb .sep {
+  color: var(--text-faint);
 }
 
-.timeline-legend i {
+.summary-crumb-day {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.summary-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 3px 6px;
+  border-radius: var(--radius-xs);
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+
+.summary-link:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.summary-headline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-2);
+}
+
+.headline-label,
+.mini-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.headline-value {
+  font-size: 22px;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.headline-delta {
+  font-size: 11px;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.headline-delta.up,
+.mini-foot.up {
+  color: var(--productive);
+}
+
+.headline-delta.down,
+.mini-foot.down {
+  color: var(--distracting);
+}
+
+.headline-delta.muted {
+  color: var(--text-faint);
+}
+
+.summary-seg {
+  width: 100%;
+}
+
+.summary-seg button {
+  flex: 1;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-2);
+}
+
+.mini-card {
+  padding: 12px 13px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+
+.mini-value {
+  font-size: 19px;
+  font-weight: 680;
+  letter-spacing: -0.028em;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-foot {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.summary-section {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.summary-section b {
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Donut and stacked bar ──────────────────────────────────────────────── */
+
+/* Ring and legend sit side by side: the legend is the readable half, and
+   stacking it under the ring pushes the two stat cards below the fold. */
+.donut-wrap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.donut-center {
+  fill: var(--text);
+  font-size: 14px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.donut-legend {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.donut-legend .legend-row {
+  font-size: 11.5px;
+  gap: 7px;
+}
+
+.donut-legend .legend-row b {
+  font-size: 11.5px;
+}
+
+.legend-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stacked {
+  display: grid;
+  gap: var(--gap-2);
+}
+
+.stacked-bar {
+  display: flex;
+  gap: 2px;
+  height: 9px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.stacked-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.stacked-legend {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px var(--gap-2);
+}
+
+/* ── Correction drawer ──────────────────────────────────────────────────── */
+
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(6, 6, 8, 0.6);
+  display: flex;
+  justify-content: flex-end;
+  animation: fade-in var(--fast) var(--ease) both;
+}
+
+.drawer {
+  width: min(420px, 92vw);
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px 18px 32px;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  animation: drawer-in var(--med) var(--ease) both;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
+}
+
+.drawer-head h2 {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* ── Session table ──────────────────────────────────────────────────────── */
+
+.session-table {
+  display: grid;
+  gap: 1px;
+}
+
+.session-row {
+  display: grid;
+  grid-template-columns: 138px 138px minmax(0, 1.4fr) minmax(0, 1fr) 62px 46px;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: 7px 8px;
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: background var(--fast) var(--ease);
+}
+
+.session-row:hover {
+  background: var(--surface-2);
+}
+
+.session-time,
+.session-len,
+.session-flag {
+  font-variant-numeric: tabular-nums;
+}
+
+.session-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text);
+}
+
+.session-cat i {
   width: 8px;
   height: 8px;
-  border-radius: 2px;
   flex: 0 0 8px;
+  border-radius: 2px;
 }
+
+.session-cat,
+.session-title,
+.session-app {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-title {
+  color: var(--text);
+}
+
+.session-app {
+  color: var(--text-faint);
+}
+
+.session-len {
+  text-align: right;
+  color: var(--text);
+  font-weight: 550;
+}
+
+.session-flag {
+  text-align: right;
+  color: var(--text-faint);
+}
+
+.session-flag.productive {
+  color: var(--productive);
+}
+
+.session-flag.distracting {
+  color: var(--distracting);
+}
+
+@media (max-width: 1180px) {
+  .calendar {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+}
+
+@media (max-width: 980px) {
+  .calendar {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .summary {
+    border-left: none;
+    border-top: 1px solid var(--line-soft);
+  }
+}
+
 
 /* ── Breakdown list ─────────────────────────────────────────────────────── */
 
@@ -1374,6 +2404,16 @@ select option {
   box-shadow: var(--shadow-sm);
 }
 
+.seg button:disabled {
+  color: var(--text-faint);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.seg button:disabled:hover {
+  color: var(--text-faint);
+}
+
 .seg.grow {
   display: flex;
 }
@@ -1381,6 +2421,13 @@ select option {
 .seg.grow button {
   flex: 1;
   text-align: center;
+}
+
+/* The date-range control is the one segmented control that is fully rounded —
+   it reads as a range picker rather than as a set of tabs. */
+.seg.range-seg,
+.seg.range-seg button {
+  border-radius: 999px;
 }
 
 /* ── Settings ───────────────────────────────────────────────────────────── */

@@ -87,9 +87,31 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    backgroundColor: '#0d1117',
+    // Must match `--bg` in the renderer, or the window paints a different dark
+    // for the frame or two before the first render lands.
+    backgroundColor: '#0d0d0f',
     title: 'OpenTime',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // The renderer draws its own title bar, so the native one is hidden and the
+    // platform's window controls are inset into it. Linux is the exception:
+    // hiding the frame there removes the controls outright rather than
+    // relocating them, and a window you cannot close is not a trade worth
+    // making for a strip of chrome.
+    titleBarStyle:
+      process.platform === 'darwin'
+        ? 'hiddenInset'
+        : process.platform === 'win32'
+          ? 'hidden'
+          : 'default',
+    ...(process.platform === 'win32'
+      ? {
+          titleBarOverlay: {
+            color: '#0d0d0f',
+            symbolColor: '#8a8a92',
+            // Matches `--titlebar` in styles.css.
+            height: 44,
+          },
+        }
+      : {}),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),

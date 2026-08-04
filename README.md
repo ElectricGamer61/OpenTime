@@ -8,7 +8,7 @@ focus score — with your calendar overlaid beside it. No timers to start. No
 screenshots. No account, no server, no subscription: everything stays in a folder
 on your machine that you can open, export, back up or delete.
 
-![Today](docs/screenshots/today.png)
+![The day calendar](docs/screenshots/calendar.png)
 
 ---
 
@@ -68,8 +68,21 @@ actually peaks, how fragmented the day was, what the meetings cost, and how toda
 compares to your *own* recent baseline. The panel renders nothing when there is
 nothing worth saying.
 
-**Calendar overlay.** Meetings render beside the timeline, so time in meetings
-and time in deep work are visible against each other.
+**A day calendar, not a list.** The main view is an hour grid with a column per
+kind of work: contiguous sessions fold into one entry, so a morning of real work
+is a handful of readable blocks rather than fifty slivers. Folding never changes
+a number — an entry's duration is the sum of the sessions in it, so the gaps
+between them are still not credited as work. Click a block for the detail card:
+what it was, how long, which apps and sites it was spent in, and the corrections.
+
+**Summary column.** Pinned beside the grid: hours worked against yesterday,
+progress against a goal you switched on, the day's breakdown as a donut by
+category, project or app, and how the time was spent across focus, neutral,
+distraction and away.
+
+**Calendar overlay.** Meetings take their own column on the grid, drawn as plans
+rather than records, so time in meetings and time in deep work are visible
+against each other.
 
 **Weekly view.** Seven-day totals, per-day stacked bars, category rollups, and
 the average focus score.
@@ -78,7 +91,7 @@ the average focus score.
 that restores everything. The data is one plain-JSON file per day in a folder you
 can open, copy or delete.
 
-![This week](docs/screenshots/week.png)
+![Reports](docs/screenshots/reports.png)
 
 ---
 
@@ -89,7 +102,7 @@ Requires Node 20+.
 ```bash
 npm install          # the native capture module is an optionalDependency; a failure here is not fatal
 npm run dev          # Vite dev server + esbuild watch + Electron
-npm test             # unit tests (241, no Electron needed)
+npm test             # unit tests (278, no Electron needed)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build into dist/
 npm start            # build, then run the app
@@ -164,8 +177,9 @@ src/
   preload/       contextBridge surface (the only thing the renderer can reach)
   renderer/      React 18 + Vite
     state/         one data hook, plus a browser-only fallback client
-    components/    Now card, timeline, charts, inspector
-    views/         Today, This week, Projects & rules, Settings
+    lib/           entry folding and column layout, colour, formatting
+    components/    day grid, detail popover, summary panel, charts, inspector
+    views/         Dashboard, Calendar, Activity, Projects, Goals, Reports, Settings
   shared/ipc.ts  channel names and the typed API both sides implement
 tests/           vitest, node environment
 ```
