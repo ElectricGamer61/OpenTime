@@ -92,6 +92,9 @@ export const SummaryPanel = memo(function SummaryPanel({
   ]
   const spendTotal = spend.reduce((sum, s) => sum + s.seconds, 0)
 
+  /** Five is what the column has room for without becoming a second list. */
+  const topApps = useMemo(() => summary.byApp.slice(0, 5), [summary])
+
   return (
     <aside className="summary" aria-label="Summary">
       <div className="summary-head">
@@ -167,6 +170,36 @@ export const SummaryPanel = memo(function SummaryPanel({
         <b>Total {duration(spendTotal)}</b>
       </div>
       <StackedBar slices={spend} />
+
+      {/* The panel used to stop here and leave a third of the column blank.
+          Top applications is the question the donut raises and does not answer
+          once the grouping is on categories or projects. */}
+      {topApps.length ? (
+        <>
+          <div className="summary-section">
+            <span>Top applications</span>
+            <b>{summary.byApp.length} in all</b>
+          </div>
+          <div className="summary-apps">
+            {topApps.map((row) => (
+              <div className="summary-app" key={row.key}>
+                <span className="summary-app-name" title={row.label}>
+                  {row.label}
+                </span>
+                <span className="summary-app-len">{duration(row.seconds)}</span>
+                <div className="bar-track">
+                  <i
+                    style={{
+                      width: `${(row.seconds / topApps[0].seconds) * 100}%`,
+                      background: 'var(--accent)',
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
     </aside>
   )
 })

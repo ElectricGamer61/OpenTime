@@ -56,6 +56,43 @@ export interface Session {
   note?: string
   /** True once a human corrected or created this row by hand. */
   edited?: boolean
+  /** Set when this stretch fell inside a focus session the user ran. */
+  focus?: FocusMark
+}
+
+/**
+ * The stamp a finished focus session leaves on the time it covered.
+ *
+ * A focus session is not a second kind of record: it is a claim over minutes
+ * the tracker already observed. Sealing one marks those rows, so the timeline
+ * can draw the session as one block without any of the time being counted
+ * twice or any of the underlying apps being thrown away.
+ */
+export interface FocusMark {
+  /** Id of the focus session, shared by every row it covered. */
+  id: string
+  /** What the user said they were going to do. */
+  label: string
+  /** Seconds the session was planned to run, for planned-vs-actual. */
+  plannedSeconds: number
+}
+
+/** Ambient sound played during a focus session. Ids are synthesised, not files. */
+export type AmbientBedId = 'silence' | 'rain' | 'ocean' | 'cafe' | 'deep'
+
+/** A focus session that is running right now. Held in memory, never on disk. */
+export interface ActiveFocus {
+  id: string
+  /** The goal the user typed, or a default. Never empty. */
+  label: string
+  /** Epoch ms. */
+  startTime: number
+  /** Planned length in seconds. The session is not stopped when it elapses. */
+  plannedSeconds: number
+  /** Category the filled-in gaps are recorded under. */
+  category: string
+  projectId?: string
+  sound: AmbientBedId
 }
 
 /** A stretch the user was away from the machine (OS-reported idle). */
@@ -215,4 +252,6 @@ export interface TrackerStatus {
   stretchStart: number | null
   /** Epoch ms a timed pause expires at, when one is running. */
   pausedUntil?: number | null
+  /** The focus session running now, when there is one. */
+  focus?: ActiveFocus | null
 }

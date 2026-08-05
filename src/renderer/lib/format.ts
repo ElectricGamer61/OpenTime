@@ -18,8 +18,11 @@ const DATED_FMT = new Intl.DateTimeFormat(undefined, {
 /** "3h 12m", "48m", "—" — the everyday duration format. */
 export function duration(seconds: number): string {
   if (!seconds || seconds < 1) return '—'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.round((seconds % 3600) / 60)
+  // Round to whole minutes *first*, then split. Splitting first and rounding
+  // the remainder lets 59m40s render as "16h 60m" — which it did.
+  const totalMinutes = Math.round(seconds / 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
   if (h && m) return `${h}h ${m}m`
   if (h) return `${h}h`
   if (m) return `${m}m`

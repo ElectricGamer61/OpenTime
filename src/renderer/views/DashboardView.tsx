@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { summarizeDay } from '../../core/aggregate'
 import { dayStartTs } from '../../core/day'
 import { FocusRing, Stat, WeekChart } from '../components/Charts'
+import { FocusSessionsCard } from '../components/FocusSessionsCard'
 import { InsightsCard } from '../components/InsightsCard'
 import { NowCard } from '../components/NowCard'
 import { RefreshButton } from '../components/RefreshButton'
@@ -20,9 +21,11 @@ import type { OpenTimeState } from '../state/useOpenTime'
 export function DashboardView({
   app,
   onOpenCalendar,
+  onStartFocus,
 }: {
   app: OpenTimeState
   onOpenCalendar(): void
+  onStartFocus(): void
 }) {
   const day = app.day
   const settings = app.settings
@@ -103,9 +106,13 @@ export function DashboardView({
         </div>
 
         <div className="grid cols-2">
-          <div className="card" style={{ alignSelf: 'start' }}>
-            <h2 className="card-title">Day balance</h2>
-            <FocusRing summary={summary} />
+          <div className="grid" style={{ gap: 14, alignContent: 'start' }}>
+            <div className="card">
+              <h2 className="card-title">Day balance</h2>
+              <FocusRing summary={summary} />
+            </div>
+
+            <FocusSessionsCard sessions={day.sessions} onStart={onStartFocus} />
           </div>
 
           <div className="grid" style={{ gap: 14, alignContent: 'start' }}>

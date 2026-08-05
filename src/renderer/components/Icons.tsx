@@ -301,3 +301,72 @@ export function IconEmptyRule({ size = 30, className }: IconProps) {
     </Svg>
   )
 }
+
+// ── Focus sessions ───────────────────────────────────────────────────────────
+
+/** Focus — a target ring drawn open, so it reads as attention rather than aim. */
+export function IconFocus(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3.25a8.75 8.75 0 1 1-8.6 10.4" />
+      <circle cx="12" cy="12" r="4.25" />
+      <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+/** Sound on — a speaker with two arcs. */
+export function IconSound(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.5 9.25h3l4-3.25v12l-4-3.25h-3z" />
+      <path d="M15 9.5a3.5 3.5 0 0 1 0 5M17.6 7a7 7 0 0 1 0 10" />
+    </Svg>
+  )
+}
+
+/** Sound off — the same speaker, struck through. */
+export function IconSoundOff(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.5 9.25h3l4-3.25v12l-4-3.25h-3z" />
+      <path d="M15.5 10l4 4M19.5 10l-4 4" />
+    </Svg>
+  )
+}
+
+/** Stop — a filled square, for ending a running session. */
+export function IconStop(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="6.5" y="6.5" width="11" height="11" rx="2.5" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+/** Plus — extending a session, adding a row. */
+export function IconPlus(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 5.5v13M5.5 12h13" />
+    </Svg>
+  )
+}
+
+/** Range — a bracketed span, for the month and custom report ranges. */
+export function IconRange(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6.5 5.5v13M17.5 5.5v13M6.5 12h11" />
+    </Svg>
+  )
+}
+
+/** Check — confirmation in the focus completion card. */
+export function IconCheck(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </Svg>
+  )
+}

@@ -32,6 +32,9 @@ const api: OpenTimeApi = {
   clearDemoData: () => ipcRenderer.invoke(CHANNELS.clearDemoData),
   reloadCapture: () => ipcRenderer.invoke(CHANNELS.reloadCapture),
   completeOnboarding: () => ipcRenderer.invoke(CHANNELS.completeOnboarding),
+  startFocus: (input) => ipcRenderer.invoke(CHANNELS.startFocus, input),
+  endFocus: () => ipcRenderer.invoke(CHANNELS.endFocus),
+  extendFocus: (minutes) => ipcRenderer.invoke(CHANNELS.extendFocus, minutes),
   onStatus: (handler) => {
     const listener = (_e: unknown, status: Parameters<typeof handler>[0]) => handler(status)
     ipcRenderer.on(CHANNELS.statusEvent, listener)

@@ -57,18 +57,27 @@ export const Breakdown = memo(function Breakdown({
   buckets,
   projects,
   limit = 8,
+  palette,
   emptyLabel = 'Nothing tracked yet.',
 }: {
   buckets: Bucket[]
   projects: Project[]
   limit?: number
+  /**
+   * Name → colour, when the rows should be told apart by *identity* rather
+   * than by productivity. The applications list needs this: every app a person
+   * works in is productive, so colouring by productivity paints ten identical
+   * green bars and the colour stops carrying anything.
+   */
+  palette?: Map<string, string>
   emptyLabel?: string
 }) {
   const rows = useMemo(() => buckets.slice(0, limit), [buckets, limit])
   const colorFor = useMemo(() => {
     const byName = new Map(projects.map((p) => [p.name, p.color]))
-    return (b: Bucket) => byName.get(b.key) || productivityColor(b.productivity)
-  }, [projects])
+    return (b: Bucket) =>
+      palette?.get(b.key) || byName.get(b.key) || productivityColor(b.productivity)
+  }, [projects, palette])
 
   if (!rows.length) return <Empty title={emptyLabel} />
 
@@ -336,11 +345,14 @@ export const WeekChart = memo(function WeekChart({
   days,
   selected,
   dayStartHour,
+  compact = false,
   onSelect,
 }: {
   days: DaySummary[]
   selected: string
   dayStartHour: number
+  /** Narrow columns and a date-only foot, for a month rather than a week. */
+  compact?: boolean
   onSelect(key: string): void
 }) {
   const max = useMemo(
@@ -349,7 +361,7 @@ export const WeekChart = memo(function WeekChart({
   )
 
   return (
-    <div className="week">
+    <div className={`week${compact ? ' compact' : ''}`}>
       {days.map((d) => {
         const stackHeight = ((d.totalSeconds + d.idleSeconds) / max) * 100
         const segments = [
@@ -383,8 +395,16 @@ export const WeekChart = memo(function WeekChart({
               )}
             </div>
             <div className="week-foot">
-              <b>{d.totalSeconds ? duration(d.totalSeconds) : '—'}</b>
-              {weekdayShort(dayStartTs(d.dayKey, dayStartHour))}
+              {compact ? (
+                // A month of "7h 26m" labels is a wall of numbers nobody
+                // reads; the date is the only thing that identifies the column.
+                <b>{Number(d.dayKey.slice(-2))}</b>
+              ) : (
+                <>
+                  <b>{d.totalSeconds ? duration(d.totalSeconds) : '—'}</b>
+                  {weekdayShort(dayStartTs(d.dayKey, dayStartHour))}
+                </>
+              )}
             </div>
           </div>
         )

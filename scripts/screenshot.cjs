@@ -82,6 +82,17 @@ for (const { tab, file: name } of TABS) {
     `document.querySelector('.nav-item.active')?.textContent.trim() ?? null`
   )
   if (active !== tab) throw new Error(`clicked "${tab}" but "${active}" is active`)
+
+  // `invalidate()` alone still left the *previous* tab's active pill in the
+  // raster — the rail is outside the region the switch dirtied, and repainting
+  // is not the same as re-rastering. A one-pixel resize and back forces a full
+  // raster and is the only thing that reliably fixed it.
+  const [w, h] = win.getSize()
+  win.setSize(w, h - 1)
+  await new Promise((r) => setTimeout(r, 150))
+  win.setSize(w, h)
+  await new Promise((r) => setTimeout(r, 350))
+
   const image = await win.webContents.capturePage()
   const file = path.join(outDir, name)
   await fs.writeFile(file, image.toPNG())

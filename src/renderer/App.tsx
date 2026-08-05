@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { BrandMark, TitleWordmark } from './components/Brand'
 import { Empty } from './components/Empty'
+import { FocusMode } from './components/Focus'
 import {
   IconActivity,
   IconCalendar,
@@ -10,6 +11,7 @@ import {
   IconClock,
   IconCollapse,
   IconDashboard,
+  IconFocus,
   IconFolder,
   IconFolderOpen,
   IconPause,
@@ -18,7 +20,9 @@ import {
   IconWeek,
 } from './components/Icons'
 import { Onboarding } from './components/Onboarding'
-import { duration } from './lib/format'
+import { focusProgress } from '../core/focus'
+import type { RangeKind } from '../core/range'
+import { clock, duration } from './lib/format'
 import type { OpenTimeState } from './state/useOpenTime'
 import { useNow, useOpenTime } from './state/useOpenTime'
 import { ActivityView } from './views/ActivityView'
@@ -69,6 +73,9 @@ export function App() {
   const app = useOpenTime()
   const [tab, setTab] = useState<Tab>('calendar')
   const [collapsed, setCollapsed] = useState(false)
+  const [focusSetup, setFocusSetup] = useState(false)
+  /** Which range Reports opens on when the calendar sends you there. */
+  const [reportRange, setReportRange] = useState<RangeKind>('week')
 
   if (!app.ready) {
     return (
@@ -85,7 +92,9 @@ export function App() {
   }
 
   return (
-    <div className={`app${collapsed ? ' rail-collapsed' : ''}`}>
+    <div
+      className={`app${collapsed ? ' rail-collapsed' : ''}${app.status?.focus ? ' focus-running' : ''}`}
+    >
       {app.firstRun ? <Onboarding app={app} /> : null}
       <Titlebar app={app} onSettings={() => setTab('settings')} />
 
@@ -124,6 +133,7 @@ export function App() {
             ))}
           </div>
 
+          <FocusButton app={app} onStart={() => setFocusSetup(true)} />
           <RailFooter app={app} />
         </nav>
 
@@ -139,24 +149,82 @@ export function App() {
               <CalendarView
                 app={app}
                 onCustomize={() => setTab('settings')}
-                onOpenReports={() => setTab('reports')}
+                onOpenReports={(kind) => {
+                  setReportRange(kind)
+                  setTab('reports')
+                }}
               />
             ) : (
               <div className="page">
                 {tab === 'dashboard' ? (
-                  <DashboardView app={app} onOpenCalendar={() => setTab('calendar')} />
+                  <DashboardView
+                    app={app}
+                    onOpenCalendar={() => setTab('calendar')}
+                    onStartFocus={() => setFocusSetup(true)}
+                  />
                 ) : null}
                 {tab === 'activity' ? <ActivityView app={app} /> : null}
                 {tab === 'projects' ? <ProjectsView app={app} /> : null}
                 {tab === 'goals' ? <GoalsView app={app} /> : null}
                 {tab === 'reports' ? (
-                  <ReportsView app={app} onOpenDay={() => setTab('calendar')} />
+                  <ReportsView
+                    app={app}
+                    /* Keyed so arriving from the calendar's range control
+                       actually re-opens on that range rather than keeping
+                       whatever the view was last left on. */
+                    key={reportRange}
+                    initialRange={reportRange}
+                    onOpenDay={() => setTab('calendar')}
+                  />
                 ) : null}
                 {tab === 'settings' ? <SettingsView app={app} /> : null}
               </div>
             )}
           </div>
         </main>
+      </div>
+
+      <FocusMode
+        app={app}
+        open={focusSetup}
+        onOpenChange={setFocusSetup}
+        onOpenCalendar={() => setTab('calendar')}
+      />
+    </div>
+  )
+}
+
+/**
+ * The way into a focus session, pinned above the rail's status block.
+ *
+ * While one is running this becomes the countdown rather than disappearing:
+ * the dock already carries the controls, and a rail that silently loses a
+ * button is a rail people stop trusting to hold the same things.
+ */
+function FocusButton({ app, onStart }: { app: OpenTimeState; onStart(): void }) {
+  const now = useNow(1000)
+  const focus = app.status?.focus ?? null
+
+  if (!focus) {
+    return (
+      <div className="rail-cta">
+        <button className="btn primary focus-start" onClick={onStart}>
+          <IconFocus size={16} />
+          <span className="nav-label">Start focus</span>
+        </button>
+      </div>
+    )
+  }
+
+  const progress = focusProgress(focus, now)
+  return (
+    <div className="rail-cta">
+      <div className="focus-chip" title={focus.label}>
+        <IconFocus size={16} />
+        <span className="nav-label">
+          <b>{clock(progress.overrun ? progress.overrunSeconds : progress.remainingSeconds)}</b>
+          {progress.overrun ? 'over' : 'left'}
+        </span>
       </div>
     </div>
   )

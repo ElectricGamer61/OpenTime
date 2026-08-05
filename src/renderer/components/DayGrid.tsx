@@ -8,7 +8,7 @@ import { duration, timeOfDay } from '../lib/format'
 import { categoryColors, edgeOn, inkOn, RESERVED_COLORS, rgba, subInkOn } from '../lib/palette'
 import { useNow } from '../state/useOpenTime'
 import { Empty } from './Empty'
-import { IconEmptyTimeline } from './Icons'
+import { IconEmptyTimeline, IconFocus } from './Icons'
 
 /**
  * Pixels per hour.
@@ -173,7 +173,9 @@ export const DayGrid = memo(function DayGrid({
                  its label: an unnamed stripe tells the reader nothing. */
               className={`entry ${entry.kind}${height < COMPACT_PX ? ' slim' : ''}${
                 padRange ? ' pad-range' : ''
-              }${padApps ? ' pad-apps' : ''}${selected ? ' selected' : ''}`}
+              }${padApps ? ' pad-apps' : ''}${entry.focus ? ' focused' : ''}${
+                selected ? ' selected' : ''
+              }`}
               style={{
                 top,
                 height,
@@ -188,12 +190,19 @@ export const DayGrid = memo(function DayGrid({
                 '--glow': rgba(color, 0.4),
               } as React.CSSProperties}
               onClick={(e) => onSelect(entry, e.currentTarget.getBoundingClientRect())}
-              title={`${entry.label} · ${timeOfDay(entry.start)}–${timeOfDay(entry.end)} · ${duration(
-                entry.seconds
-              )}`}
+              title={`${entry.focus ? 'Focus session — ' : ''}${entry.label} · ${timeOfDay(
+                entry.start
+              )}–${timeOfDay(entry.end)} · ${duration(entry.seconds)}`}
             >
               <i className="entry-edge" aria-hidden="true" />
-              {height >= TINY_PX ? <span className="entry-title">{entry.label}</span> : null}
+              {height >= TINY_PX ? (
+                <span className="entry-title">
+                  {/* The badge is what separates "you declared this" from
+                      "the tracker inferred this" at a glance. */}
+                  {entry.focus ? <IconFocus size={12} className="entry-badge" /> : null}
+                  {entry.label}
+                </span>
+              ) : null}
               {height >= COMPACT_PX ? (
                 <span className="entry-range">
                   {timeOfDay(entry.start)} - {timeOfDay(entry.end)}

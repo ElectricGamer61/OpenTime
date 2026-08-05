@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 
 import { summarizeDay } from '../../core/aggregate'
 import { dayStartTs } from '../../core/day'
+import { WeekChart } from '../components/Charts'
 import { GoalsCard } from '../components/GoalsCard'
 import { duration, longDate } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
@@ -50,7 +51,7 @@ export function GoalsView({ app }: { app: OpenTimeState }) {
         </div>
       </div>
 
-      <div className="grid narrow" style={{ gap: 14 }}>
+      <div className="goals-layout">
         <GoalsCard
           goals={app.goals}
           today={summary}
@@ -61,6 +62,23 @@ export function GoalsView({ app }: { app: OpenTimeState }) {
           onSave={(goals) => void app.saveGoals(goals)}
         />
 
+        <div className="goals-side">
+        <div className="card">
+          <h2 className="card-title">
+            The week a target is set against
+            <span className="hint">Click a day to open it</span>
+          </h2>
+          {/* A goal is a claim about a normal week, so the week has to be on
+              the same screen — otherwise the number gets picked out of the air
+              and then quietly ignored. */}
+          <WeekChart
+            days={weekSummaries}
+            selected={day.dayKey}
+            dayStartHour={settings.dayStartHour}
+            onSelect={(key) => app.selectDay(key)}
+          />
+        </div>
+
         <div className="card">
           <h2 className="card-title">Why there are no streaks</h2>
           <p className="prose">
@@ -70,6 +88,7 @@ export function GoalsView({ app }: { app: OpenTimeState }) {
             starter goals ship switched off. Goals that arrive pre-enabled are goals somebody else
             set for you, and the first thing anyone does with those is stop believing the number.
           </p>
+        </div>
         </div>
       </div>
     </>

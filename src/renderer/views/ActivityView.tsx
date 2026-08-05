@@ -59,6 +59,16 @@ export function ActivityView({ app }: { app: OpenTimeState }) {
     [app.projects, day]
   )
 
+  /** Apps are coloured by name, not by productivity — see `Breakdown`. */
+  const appColors = useMemo(
+    () =>
+      categoryColors(
+        [],
+        [...new Set([...summary.byApp, ...weekApps].map((b) => b.key))].sort()
+      ),
+    [summary, weekApps]
+  )
+
   if (!day || !settings) return null
 
   const categories = scope === 'day' ? summary.byCategory : week.byCategory
@@ -96,7 +106,7 @@ export function ActivityView({ app }: { app: OpenTimeState }) {
           </div>
           <div className="card">
             <h2 className="card-title">Applications</h2>
-            <Breakdown buckets={apps} projects={app.projects} limit={10} />
+            <Breakdown buckets={apps} projects={app.projects} palette={appColors} limit={10} />
           </div>
         </div>
 

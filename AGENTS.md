@@ -16,13 +16,16 @@ Start with `README.md` — it documents the stack, architecture, performance rat
 - **Writes are durable but asynchronous, so ordering matters at quit.** `Tracker.stop()` starts the final write; `Tracker.drain()` awaits it. `before-quit` must drain *then* flush storage, and tests must `await tracker.drain()` before asserting on stored data.
 - **Journal replay is idempotent only because of `seq`.** Each record carries a monotonic sequence and each day file records the highest one folded into it. Any new journal op must carry `seq` and be skipped on replay when `seq <= lastSeq`, or a crash will double-count sessions.
 - **`broadcast()` can be called while the renderer is being torn down.** A disposed render frame makes `webContents.send` throw even when the window is not destroyed, and the final flush on quit runs through that path. Keep its guards and its `try`.
+- **A focus session is a claim over minutes the tracker already recorded, not a second tracker.** `sealFocus` in `src/core/focus.ts` stamps the rows inside the window, splits rows straddling an edge, and fills only what was never observed. Never make it *create* a session for the whole window — that double-counts the day. It is also idempotent on the session id, which is what makes a retried `endFocus` safe.
+- **`endFocus` must flush the tracker first.** The minutes just worked are still inside `SessionBuilder`; sealing before `tracker.flushOpenSession()` seals an empty window.
+- **Ambient sound is synthesised, never bundled.** `src/renderer/lib/ambient.ts` builds every bed from filtered noise through Web Audio, lazily — the CSP forbids external sources, and constructing an `AudioContext` on mount marks the page as playing audio forever.
 - **Demo data is gated on purpose.** Seeding only happens when capture is genuinely unavailable, every synthetic row carries `source: 'demo'`, and seeded day keys are recorded in `meta.json` so they can be removed exactly. Do not widen that gate — putting generated history into a working install is fiction in a user's records.
 
 ## Testing and running without a display
 
-- `npm test` — 278 tests, node environment, no Electron needed.
+- `npm test` — 309 tests, node environment, no Electron needed.
 - `npm run typecheck` — covers `src/` **and** `tests/`.
-- To exercise the **main process** end to end, run `npx electron . --user-data-dir=<tmp> --disable-gpu`. Always pass `--user-data-dir`: without it the app reads and migrates the real `~/.config/OpenTime` store. WSL needs `--disable-gpu` or Electron may abort on GPU init.
+- To exercise the **main process** end to end, run `npx electron . --user-data-dir=<tmp> --disable-gpu`. Always pass `--user-data-dir`: without it the app reads and migrates the real `~/.config/OpenTime` store. WSL needs `--disable-gpu --no-sandbox` (and often `--in-process-gpu`) or Electron aborts at boot with `GPU process isn't usable`.
 - The browser fallback client in `src/renderer/state/client.ts` implements the *whole* `OpenTimeApi`. Adding an IPC method means adding it there too, or the screenshot/preview path breaks.
 
 `npx electron scripts/screenshot.cjs <outDir>` boots the real Electron shell and writes a PNG per tab. It intentionally loads the renderer *without* the preload bridge, so the renderer falls back to its self-contained demo client in `src/renderer/state/client.ts` — full UI, no tracking engine required. Run `npx electron scripts/screenshot.cjs docs/screenshots` after visual changes; the filenames it writes are the ones README links to.
@@ -31,17 +34,27 @@ Start with `README.md` — it documents the stack, architecture, performance rat
 
 `invalidate()` is not enough for something *newly added* to the page, such as an opened popover or drawer: it repaints, but the new layer never lands in the capture. A one-pixel `win.setSize()` there and back forces a full raster and is the only thing that reliably worked.
 
+`npx electron scripts/preview.cjs <outDir> [shot...]` captures the states you can only reach by *doing* something — the focus sheet, a running session, a month report. Each shot is a list of click expressions, and a bare number is a pause (a focus session has to actually run before ending it shows anything).
+
+`npm run dev` forwards anything after `--` to Electron (`npm run dev -- --disable-gpu --no-sandbox`, which WSL needs) and honours `OPENTIME_DEV_PORT` so two checkouts can run it at once.
+
 ## Renderer shape
 
 `App.tsx` is the shell: its own title bar (the native one is hidden on macOS and Windows — see `createWindow`), a labelled sidebar, and one view. **The calendar view manages its own scrolling columns; every other view renders inside the `.page` wrapper App provides.** Views return fragments, so a `:not(.calendar)` child selector gives one scroll container per top-level element — that is what the wrapper exists to prevent.
 
 The calendar's data path is `lib/entries.ts` → `DayGrid` → `EntryPopover`, and `lib/palette.ts` decides colour. Two invariants live in `entries.ts` and are pinned by `tests/entries.test.ts`: only **adjacent** sessions fold into one entry (folding across an intervening category would claim the minutes in between), and an entry's duration is the **sum of its sessions**, never end-minus-start — the visible block spans the sub-gaps, the number does not.
 
+A sealed focus session groups by its **label** rather than its category in every mode but "by app" (`groupKeyFor`), which is what makes it draw as one block. `DayEntry.focus` is set only when the whole fold shares one session id — a fold mixing focused and unfocused time is not a focus session and must not be badged as one.
+
+Reporting ranges live in `src/core/range.ts`, pure and separate from `ReportsView`. Calendar periods come from `Date` month arithmetic, never from adding 30 days, and day enumeration goes through `dayKeyRange` so a DST boundary neither drops nor repeats a day.
+
 Column assignment is by *label*, not by collision: OpenTime's sessions never overlap, so packing by collision yields one column and loses the point of a grid. Labels past the cap share the last column, which is safe for exactly that reason.
 
 ## UI conventions
 
 `src/renderer/styles.css` holds the whole design system as tokens (colour, the `--gap-*` spacing scale, radii, `--fast`/`--med`/`--slow` durations). Use the tokens rather than literals so a light theme stays a token swap. Keep saturated colour to small areas — meters, swatches, arcs. **The one exception is a calendar block**, which is painted in solid category colour because on an hour grid the fill is the only thing carrying identity, and a 13% wash of eight hues is eight shades of grey; the accompanying left-edge bar comes from `edgeOn()` so it stays the same hue. Icons are inline SVG in `components/Icons.tsx` (24×24, 1.7px round strokes, no binary assets — the renderer's CSP allows no external sources). Every "nothing here" surface goes through `components/Empty.tsx`. All motion must survive `prefers-reduced-motion`, which the stylesheet disables globally at the bottom.
+
+`repeat(auto-fit, minmax(0, 1fr))` is **invalid** — an auto-repeat track has to be a fixed size — and an invalid `grid-template-columns` is dropped silently, taking the layout with it. For a chart that draws any number of columns use `grid-auto-flow: column` with `grid-auto-columns: minmax(0, 1fr)`.
 
 **A grid container that only declares rows needs `grid-template-columns: minmax(0, 1fr)`.** The implicit column refuses to shrink below its widest child's min-content, so in a narrow window the whole pane silently grows past its track — the calendar main pane slid under the summary panel this way, and the summary panel ran off the window edge. `.calendar-main`, `.summary`, `.donut-legend` and `.legend` all carry the clamp; give any new single-column grid the same one.
 

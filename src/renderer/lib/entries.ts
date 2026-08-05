@@ -55,6 +55,8 @@ export interface DayEntry {
   edited: boolean
   /** True when every folded session is synthetic. */
   demo: boolean
+  /** Set when the entry is a focus session the user ran deliberately. */
+  focus?: { id: string; label: string; plannedSeconds: number }
 }
 
 /**
@@ -81,6 +83,11 @@ export function groupKeyFor(
   mode: GroupMode,
   projectNames: Map<string, string>
 ): string {
+  // A focus session outranks every grouping except "by app": the user declared
+  // that stretch to be one thing, and splitting their 45 minutes back into
+  // three category blocks throws that declaration away. Apps are exempt because
+  // "which app did the focus session go in" is exactly what that tab is for.
+  if (mode !== 'app' && session.focus) return session.focus.label
   if (mode === 'app') return session.app || 'Unknown app'
   if (mode === 'project') {
     const name = session.projectId ? projectNames.get(session.projectId) : undefined
@@ -151,6 +158,12 @@ function finish(label: string, sessions: Session[]): DayEntry {
     note: [...sessions].reverse().find((s) => s.note?.trim())?.note,
     edited: sessions.some((s) => s.edited),
     demo: sessions.every((s) => s.source === 'demo'),
+    // Only when the whole run is one session — a fold that mixes focused and
+    // unfocused time is not a focus session and must not be badged as one.
+    focus:
+      sessions[0].focus && sessions.every((s) => s.focus?.id === sessions[0].focus?.id)
+        ? sessions[0].focus
+        : undefined,
   }
 }
 

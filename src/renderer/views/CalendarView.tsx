@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { summarizeDay } from '../../core/aggregate'
 import { dayKey, dayStartTs, parseYmdLocal, formatYmdLocal } from '../../core/day'
 import type { IdleBlock, Session } from '../../core/types'
+import type { RangeKind } from '../../core/range'
 import type { Slice } from '../components/Charts'
 import { DayGrid } from '../components/DayGrid'
 import { EntryPopover } from '../components/EntryPopover'
@@ -33,18 +34,19 @@ const TABS: Array<{ id: GroupMode; label: string; Icon: typeof IconList }> = [
 ]
 
 /**
- * Ranges the reporting layer can actually produce.
+ * Ranges the reporting layer can produce.
  *
- * Month and year are shown disabled rather than hidden: storage and export
- * already span arbitrary ranges and only the view is missing, so the gap is real
- * and worth advertising. See docs/feature-inventory.md §9.
+ * Every one of these is built now. Day is this view; the rest hand off to
+ * Reports, which owns the range arithmetic. The previous pass rendered Month
+ * and Year disabled so the missing view was visible rather than pretended away
+ * — that gap is closed, so the buttons work.
  */
-const RANGES = [
-  { id: 'day', label: 'Day', built: true },
-  { id: 'week', label: 'Week', built: true },
-  { id: 'month', label: 'Month', built: false },
-  { id: 'year', label: 'Year', built: false },
-] as const
+const RANGES: Array<{ id: 'day' | RangeKind; label: string }> = [
+  { id: 'day', label: 'Day' },
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
+  { id: 'year', label: 'Year' },
+]
 
 function shiftDayKey(key: string, days: number): string {
   const d = parseYmdLocal(key)
@@ -67,7 +69,7 @@ export function CalendarView({
 }: {
   app: OpenTimeState
   onCustomize(): void
-  onOpenReports(): void
+  onOpenReports(kind: RangeKind): void
 }) {
   const [mode, setMode] = useState<GroupMode>('category')
   const [open, setOpen] = useState<{ entry: DayEntry; anchor: DOMRect } | null>(null)
@@ -152,9 +154,6 @@ export function CalendarView({
     <div className="calendar">
       <section className="calendar-main">
         <div className="grid-tabs">
-          <span className="grid-tabs-mark" aria-hidden="true">
-            <IconCalendar size={14} />
-          </span>
           <div className="tabs">
             {TABS.map((tab) => (
               <button
@@ -178,14 +177,13 @@ export function CalendarView({
                 <button
                   key={range.id}
                   className={range.id === 'day' ? 'on' : ''}
-                  disabled={!range.built}
-                  title={
-                    range.built
-                      ? `${range.label} view`
-                      : `${range.label} ranges are not built yet`
+                  title={`${range.label} view`}
+                  /* Day is already here; everything wider is Reports. */
+                  onClick={
+                    range.id === 'day'
+                      ? undefined
+                      : () => onOpenReports(range.id as RangeKind)
                   }
-                  /* Day is already here; Week is the Reports view. */
-                  onClick={range.id === 'week' ? onOpenReports : undefined}
                 >
                   {range.label}
                 </button>

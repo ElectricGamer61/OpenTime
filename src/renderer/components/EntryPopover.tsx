@@ -185,10 +185,16 @@ export function EntryPopover({
             {entry.titles[0]}
           </span>
         ) : null}
+        {entry.focus ? <span className="chip focus">Focus session</span> : null}
         {entry.edited ? <span className="chip">Corrected by hand</span> : null}
         {entry.demo ? <span className="chip warn">Demo data</span> : null}
       </div>
 
+      {entry.focus?.plannedSeconds ? (
+        <p className="popover-body">
+          Planned {duration(entry.focus.plannedSeconds)}, recorded {duration(entry.seconds)}.
+        </p>
+      ) : null}
       {entry.note ? <p className="popover-note">“{entry.note}”</p> : null}
       <p className="popover-body">{describeEntry(entry)}</p>
 

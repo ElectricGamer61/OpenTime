@@ -245,6 +245,34 @@ describe('exports', () => {
     expect(await storage.getIdle(KEY)).toHaveLength(1)
   })
 
+  it('seals a focus session into the day and survives a reopen', async () => {
+    const outcome = await applyEdit(storage, {
+      kind: 'seal-focus',
+      dayKey: KEY,
+      focus: {
+        id: 'f1',
+        label: 'Ship the billing fix',
+        startTime: at(9, 30),
+        plannedSeconds: 45 * 60,
+        category: 'Deep Work',
+        sound: 'silence',
+      },
+      endTime: at(10, 15),
+    })
+    expect(outcome.ok).toBe(true)
+
+    // Re-open the store from disk: a seal that only mutated an in-memory array
+    // would pass every other assertion here.
+    const reopened = new FileStorage(dir)
+    await reopened.init()
+    const sessions = await reopened.getSessions(KEY)
+    const marked = sessions.filter((s) => s.focus?.id === 'f1')
+    expect(marked.length).toBeGreaterThan(0)
+    expect(marked.every((s) => s.focus?.label === 'Ship the billing fix')).toBe(true)
+    // 09:30–10:15 is 45 minutes, all of it accounted for one way or another.
+    expect(marked.reduce((sum, s) => sum + s.durationSeconds, 0)).toBe(45 * 60)
+  })
+
   it('reports an empty store rather than writing a headers-only file', () => {
     const empty = new FileStorage(path.join(dir, 'empty'))
     expect(resolveRange(empty, { format: 'sessions-csv' })).toEqual([])
