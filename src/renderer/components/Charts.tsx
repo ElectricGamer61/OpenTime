@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react'
 
 import type { Bucket, DaySummary } from '../../core/aggregate'
 import type { Project } from '../../core/types'
-import { duration, percent, productivityColor, weekdayShort } from '../lib/format'
+import { duration, longDate, percent, productivityColor, weekdayShort } from '../lib/format'
 import { dayStartTs } from '../../core/day'
 import { Empty } from './Empty'
 
@@ -65,6 +65,12 @@ export const Breakdown = memo(function Breakdown({
   emptyLabel?: string
 }) {
   const rows = useMemo(() => buckets.slice(0, limit), [buckets, limit])
+  // Truncation must say so: a list that quietly stops reads as "that was
+  // everything", which for a time tracker is a wrong answer.
+  const rest = useMemo(() => {
+    const hidden = buckets.slice(limit)
+    return { count: hidden.length, seconds: hidden.reduce((sum, b) => sum + b.seconds, 0) }
+  }, [buckets, limit])
   const colorFor = useMemo(() => {
     const byName = new Map(projects.map((p) => [p.name, p.color]))
     return (b: Bucket) => byName.get(b.key) || productivityColor(b.productivity)
@@ -91,6 +97,11 @@ export const Breakdown = memo(function Breakdown({
           </div>
         </div>
       ))}
+      {rest.count > 0 ? (
+        <div className="bar-more">
+          + {rest.count} more · {duration(rest.seconds)}
+        </div>
+      ) : null}
     </div>
   )
 })
@@ -219,9 +230,11 @@ export const WeekChart = memo(function WeekChart({
             role="button"
             tabIndex={0}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') onSelect(d.dayKey)
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault() // Space must activate, not scroll the page.
+              onSelect(d.dayKey)
             }}
-            title={`${d.dayKey} — ${duration(d.totalSeconds)} tracked, focus ${d.focusScore}`}
+            title={`${longDate(dayStartTs(d.dayKey, dayStartHour))} — ${duration(d.totalSeconds)} tracked, focus ${d.focusScore}`}
           >
             <div className="week-stack" style={{ height: `${Math.max(2, stackHeight)}%` }}>
               {segments.map((s) =>

@@ -7,7 +7,14 @@ import { RefreshButton } from '../components/RefreshButton'
 import { duration, longDate, percent } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
 
-export function WeekView({ app }: { app: OpenTimeState }) {
+export function WeekView({
+  app,
+  onOpenDay,
+}: {
+  app: OpenTimeState
+  /** Selects the day and navigates to the view that shows it. */
+  onOpenDay(key: string): void
+}) {
   const settings = app.settings
 
   const days = useMemo(
@@ -76,7 +83,7 @@ export function WeekView({ app }: { app: OpenTimeState }) {
             days={days}
             selected={app.selectedDay}
             dayStartHour={settings.dayStartHour}
-            onSelect={app.selectDay}
+            onSelect={onOpenDay}
           />
         </div>
 
@@ -97,9 +104,11 @@ export function WeekView({ app }: { app: OpenTimeState }) {
                 key={d.dayKey}
                 role="button"
                 tabIndex={0}
-                onClick={() => app.selectDay(d.dayKey)}
+                onClick={() => onOpenDay(d.dayKey)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') app.selectDay(d.dayKey)
+                  if (e.key !== 'Enter' && e.key !== ' ') return
+                  e.preventDefault() // Space must activate, not scroll the page.
+                  onOpenDay(d.dayKey)
                 }}
               >
                 <div>

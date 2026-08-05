@@ -89,7 +89,7 @@ Requires Node 20+.
 ```bash
 npm install          # the native capture module is an optionalDependency; a failure here is not fatal
 npm run dev          # Vite dev server + esbuild watch + Electron
-npm test             # unit tests (241, no Electron needed)
+npm test             # unit tests (249, no Electron needed)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build into dist/
 npm start            # build, then run the app
@@ -392,7 +392,7 @@ Notes for a real release:
 npm test
 ```
 
-241 tests, node environment, no Electron and no display required:
+249 tests, node environment, no Electron and no display required:
 
 | Suite | Covers |
 |---|---|
@@ -400,6 +400,7 @@ npm test
 | `categorize.test.ts` | rule precedence, URL host reduction, productivity classification, private apps and subjects |
 | `sessions.test.ts` | session batching, gap splitting, day-boundary splitting, noise rejection, live rule changes |
 | `aggregate.test.ts` | daily/weekly rollups, focus runs, focus-score properties, timeline geometry |
+| `format.test.ts` | duration/clock/percent presentation, the 60th-minute carry, hex-to-wash fills |
 | `storage.test.ts` | sharding, journal crash recovery, idempotent replay, corrupt-file containment, cache eviction, v0 migration, retention, restore |
 | `tracker.test.ts` | the full active/idle state machine with an injected clock and fake capture, timed pause, adapter swap, drain-before-quit |
 | `edits.test.ts` | split/merge/retime/manual/claim arithmetic and every rejection case |

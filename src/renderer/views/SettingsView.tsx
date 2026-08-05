@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import type { Settings } from '../../core/types'
 import { DataSettings } from '../components/DataSettings'
+import { IconInfo } from '../components/Icons'
 import type { OpenTimeState } from '../state/useOpenTime'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange(v: boolean): void; label: string }) {
@@ -66,7 +67,7 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
         <div>
           <h1 className="page-title">Settings</h1>
           <p className="page-sub">
-            OpenTime {app.appVersion} · {app.platform} · capture:{' '}
+            OpenTime v{app.appVersion} · {app.platform} · capture:{' '}
             {app.status?.captureAdapter || 'unknown'}
           </p>
         </div>
@@ -415,7 +416,7 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
 
           {calendarMessage ? (
             <div className="notice" style={{ marginTop: 12, marginBottom: 0 }}>
-              <span>ⓘ</span>
+              <IconInfo />
               <div>{calendarMessage}</div>
             </div>
           ) : null}

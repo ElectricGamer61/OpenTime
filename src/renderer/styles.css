@@ -1157,6 +1157,16 @@ select option {
   margin-top: 1px;
 }
 
+/* The truncation footer of a breakdown list — present so a cut-off list never
+   pretends to be the whole story. */
+.bar-more {
+  padding-top: 9px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Week chart ─────────────────────────────────────────────────────────── */
 
 .week {
@@ -1549,17 +1559,6 @@ select option {
 }
 
 /* ── Insights, goals, corrections, onboarding ───────────────────────────── */
-
-/* Rows whose control is a group of buttons need their natural width, not the
-   fixed control column — otherwise three export buttons stack into three
-   lines. */
-.setting-row.wide {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.setting-row > :last-child {
-  justify-self: end;
-}
 
 .card-note {
   margin: -6px 0 var(--gap-3);

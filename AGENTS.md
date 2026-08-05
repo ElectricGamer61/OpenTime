@@ -20,7 +20,7 @@ Start with `README.md` — it documents the stack, architecture, performance rat
 
 ## Testing and running without a display
 
-- `npm test` — 241 tests, node environment, no Electron needed.
+- `npm test` — 249 tests, node environment, no Electron needed.
 - `npm run typecheck` — covers `src/` **and** `tests/`.
 - To exercise the **main process** end to end, run `npx electron . --user-data-dir=<tmp> --disable-gpu`. Always pass `--user-data-dir`: without it the app reads and migrates the real `~/.config/OpenTime` store. WSL needs `--disable-gpu` or Electron may abort on GPU init.
 - The browser fallback client in `src/renderer/state/client.ts` implements the *whole* `OpenTimeApi`. Adding an IPC method means adding it there too, or the screenshot/preview path breaks.
