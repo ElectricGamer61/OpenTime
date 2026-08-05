@@ -12,6 +12,7 @@ import path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { dayKey } from '../src/core/day'
 import { parseBackup } from '../src/core/export'
 import type { Session } from '../src/core/types'
 import { applyEdit } from '../src/main/edits/applyEdit'
@@ -178,6 +179,82 @@ describe('applyEdit', () => {
     const sessions = await storage.getSessions(KEY)
     expect(sessions[0].startTime).toBe(at(7))
     expect(sessions[1].startTime).toBe(at(9))
+  })
+})
+
+describe('a correction cannot be filed under the wrong tracking day', () => {
+  // The store trusts its caller for *which* day, so this is the guard that keeps
+  // a day file's rows agreeing with `dayKey()`. A row whose timestamp maps to
+  // another day makes that day's totals wrong and contradicts any re-aggregation
+  // from timestamps — the local-vs-boundary bug `core/day.ts` exists to prevent.
+  const beforeRollover = new Date(2026, 2, 14, 2, 0, 0, 0).getTime() // 2am on the 14th
+
+  it('refuses a manual entry timed before the day it is being added to begins', async () => {
+    // The tracking day 2026-03-14 runs 04:00 on the 14th to 04:00 on the 15th,
+    // so 02:00 on the 14th belongs to 2026-03-13.
+    expect(dayKey(beforeRollover, 4)).toBe('2026-03-13')
+
+    const result = await applyEdit(storage, {
+      kind: 'manual',
+      dayKey: KEY,
+      startTime: beforeRollover,
+      endTime: beforeRollover + 3600_000,
+      category: 'Workshop',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/outside the tracking day/i)
+    expect(await storage.getSessions(KEY)).toHaveLength(0)
+  })
+
+  it('accepts an after-midnight entry, which is still the same tracking day', async () => {
+    const oneAmNextMorning = new Date(2026, 2, 15, 1, 0, 0, 0).getTime()
+    expect(dayKey(oneAmNextMorning, 4)).toBe(KEY)
+
+    const result = await applyEdit(storage, {
+      kind: 'manual',
+      dayKey: KEY,
+      startTime: oneAmNextMorning,
+      endTime: oneAmNextMorning + 1800_000,
+      category: 'Late fix',
+    })
+
+    expect(result.ok).toBe(true)
+    const stored = await storage.getSessions(KEY)
+    expect(stored).toHaveLength(1)
+    expect(dayKey(stored[0].startTime, 4)).toBe(KEY)
+  })
+
+  it('refuses a retime that would push a session out of its day', async () => {
+    await storage.appendSessions([session('a', at(9), at(11))])
+
+    const result = await applyEdit(storage, {
+      kind: 'retime',
+      dayKey: KEY,
+      sessionId: 'a',
+      startTime: beforeRollover,
+      endTime: beforeRollover + 3600_000,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/outside the tracking day/i)
+    const stored = await storage.getSessions(KEY)
+    expect(stored[0].startTime).toBe(at(9))
+  })
+
+  it('every stored session agrees with dayKey after a run of accepted edits', async () => {
+    await storage.appendSessions([session('a', at(9), at(11)), session('b', at(13), at(15))])
+    await applyEdit(storage, { kind: 'split', dayKey: KEY, sessionId: 'a', at: at(10) })
+    await applyEdit(storage, {
+      kind: 'manual', dayKey: KEY, startTime: at(20), endTime: at(21), category: 'Evening',
+    })
+    await applyEdit(storage, {
+      kind: 'retime', dayKey: KEY, sessionId: 'b', startTime: at(13), endTime: at(14),
+    })
+
+    for (const s of await storage.getSessions(KEY)) {
+      expect(dayKey(s.startTime, 4)).toBe(KEY)
+    }
   })
 })
 

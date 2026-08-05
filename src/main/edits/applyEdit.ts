@@ -22,6 +22,7 @@ import {
   retimeSession,
   splitSession,
 } from '../../core/edits'
+import { dayContains, dayEndTs, dayStartTs } from '../../core/day'
 import type { DayRecord, Session } from '../../core/types'
 import type { SessionEdit } from '../../shared/ipc'
 import type { Storage } from '../storage/Storage'
@@ -32,13 +33,47 @@ export interface ApplyEditOutcome {
   day?: DayRecord & { dayKey: string }
 }
 
+/**
+ * "Sat 14 Mar, 04:00" — for an error message about a day boundary.
+ *
+ * The date matters here: a tracking day's two bounds are the same wall-clock
+ * hour, so printing the time alone reads as the nonsensical "04:00 to 04:00".
+ */
+function whenLabel(ts: number): string {
+  const d = new Date(ts)
+  const date = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return `${date}, ${time}`
+}
+
 export async function applyEdit(
   storage: Storage,
   edit: SessionEdit
 ): Promise<ApplyEditOutcome> {
   const key = edit.dayKey
+  const dayStartHour = storage.getSettings().dayStartHour
   const sessions = [...(await storage.getSessions(key))]
   const find = (id: string) => sessions.find((s) => s.id === id)
+
+  /**
+   * Refuse a span that does not belong to the day it is being written into.
+   *
+   * A day file whose rows disagree with `dayKey()` is the bug class `day.ts`
+   * exists to prevent: the totals for that day include time that belongs to
+   * another one, and any re-aggregation from timestamps contradicts the store.
+   * The caller is trusted for *which* day, so this is the last line of defence.
+   */
+  const mustBeInDay = (startTime: number, endTime: number): string | null => {
+    // Malformed times are `core/edits`' to reject, with better wording.
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return null
+    // `endTime` is exclusive, so a span ending exactly on the boundary is fine.
+    if (dayContains(key, startTime, dayStartHour) && endTime <= dayEndTs(key, dayStartHour)) return null
+    return (
+      `That time is outside the tracking day being edited, which runs ` +
+      `${whenLabel(dayStartTs(key, dayStartHour))} to ${whenLabel(dayEndTs(key, dayStartHour))}. ` +
+      'Open the day it belongs to and add it there.'
+    )
+  }
 
   try {
     switch (edit.kind) {
@@ -70,6 +105,8 @@ export async function applyEdit(
       case 'retime': {
         const target = find(edit.sessionId)
         if (!target) return { ok: false, message: 'That session is no longer there.' }
+        const outside = mustBeInDay(edit.startTime, edit.endTime)
+        if (outside) return { ok: false, message: outside }
         const moved = retimeSession(target, edit.startTime, edit.endTime)
         await storage.putSessions(
           key,
@@ -78,6 +115,8 @@ export async function applyEdit(
         break
       }
       case 'manual': {
+        const outside = mustBeInDay(edit.startTime, edit.endTime)
+        if (outside) return { ok: false, message: outside }
         const created = makeManualSession(edit)
         const clashes = findOverlaps(created, sessions)
         if (clashes.length) {

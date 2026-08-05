@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 
 import { buildTimeline, positionEvent, timelineWindow } from '../../core/aggregate'
 import type { CalendarEvent, IdleBlock, Project, Session } from '../../core/types'
@@ -7,13 +7,20 @@ import { useNow } from '../state/useOpenTime'
 import { Empty } from './Empty'
 import { IconEmptyTimeline } from './Icons'
 
-const TRACK_HEIGHT = 620
+const TRACK_HEIGHT = 660
 /** Below this a block cannot fit two lines of text — show the label only. */
-const COMPACT_PX = 36
-/** Below this even one line would spill past the block — show a colour bar.
-    Raising this trades a clipped descender for an unlabelled stripe, which is
-    the worse of the two: an anonymous bar tells the reader nothing at all. */
-const TINY_PX = 18
+const COMPACT_PX = 34
+/**
+ * Below this even one line of label would spill past the block, so it renders
+ * as a deliberate tick instead. This is also the clustering threshold: leaving
+ * a gap between the two produced blocks big enough to escape a cluster but too
+ * small to label — an empty tinted box, which reads as a rendering fault.
+ */
+const TINY_PX = 17
+/** Only collapse a run once it is actually a run. */
+const MIN_CLUSTER = 2
+/** Every block keeps a clickable minimum, cluster or not. */
+const MIN_BLOCK_PX = 4
 
 interface Props {
   dayKey: string
@@ -22,8 +29,10 @@ interface Props {
   idle: IdleBlock[]
   events: CalendarEvent[]
   projects: Project[]
-  selectedId: string | null
-  onSelect(session: Session | null): void
+  /** Every selected session id — more than one is a pending merge. */
+  selectedIds: string[]
+  /** `additive` is a ctrl/cmd/shift click: extend the selection to merge. */
+  onSelect(session: Session | null, additive: boolean): void
   /** Away blocks are selectable too — claiming one is a real correction. */
   onSelectIdle?(block: IdleBlock | null): void
 }
@@ -42,10 +51,11 @@ export const Timeline = memo(function Timeline({
   idle,
   events,
   projects,
-  selectedId,
+  selectedIds,
   onSelect,
   onSelectIdle,
 }: Props) {
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds])
   const window = useMemo(
     () => timelineWindow(dayKey, dayStartHour, sessions),
     [dayKey, dayStartHour, sessions]
@@ -55,6 +65,65 @@ export const Timeline = memo(function Timeline({
     () => buildTimeline(sessions, idle, window.start, window.end),
     [sessions, idle, window]
   )
+
+  /** Ids of clusters the reader has opened up. */
+  const [expanded, setExpanded] = useState<string[]>([])
+
+  /**
+   * Group runs of unreadably short blocks into one band.
+   *
+   * A busy hour of quick context switches renders as a dozen 4px stripes: no
+   * label fits, none is clickable, and the eye reads the whole hour as a
+   * rendering fault rather than as what it is. Collapsing the run into a single
+   * band labelled with its count and total says *more* than the stripes did,
+   * and clicking it puts the real blocks back — so nothing is hidden, only
+   * folded.
+   */
+  const rows = useMemo(() => {
+    type Row =
+      | { kind: 'block'; block: (typeof blocks)[number]; height: number; top: number }
+      | {
+          kind: 'cluster'
+          id: string
+          top: number
+          height: number
+          members: typeof blocks
+          seconds: number
+        }
+
+    const out: Row[] = []
+    const px = (b: (typeof blocks)[number]) => Math.max(MIN_BLOCK_PX, b.size * TRACK_HEIGHT - 1)
+
+    for (let i = 0; i < blocks.length; ) {
+      if (px(blocks[i]) >= TINY_PX) {
+        out.push({ kind: 'block', block: blocks[i], height: px(blocks[i]), top: blocks[i].offset * TRACK_HEIGHT })
+        i += 1
+        continue
+      }
+      let j = i
+      while (j < blocks.length && px(blocks[j]) < TINY_PX) j += 1
+      const run = blocks.slice(i, j)
+      const id = `cl_${run[0].id}`
+      if (run.length < MIN_CLUSTER || expanded.includes(id)) {
+        for (const b of run) out.push({ kind: 'block', block: b, height: px(b), top: b.offset * TRACK_HEIGHT })
+      } else {
+        const top = run[0].offset * TRACK_HEIGHT
+        const end = run[run.length - 1].offset * TRACK_HEIGHT + px(run[run.length - 1])
+        out.push({
+          kind: 'cluster',
+          id,
+          top,
+          // The band must be tall enough to read even when the run it stands
+          // for is thinner than its own label.
+          height: Math.max(20, end - top),
+          members: run,
+          seconds: run.reduce((sum, b) => sum + b.durationSeconds, 0),
+        })
+      }
+      i = j
+    }
+    return out
+  }, [blocks, expanded])
 
   // Project colour identifies *what* the block was; productivity colour says
   // how it counted. Both are needed, so they get separate visual channels.
@@ -126,39 +195,86 @@ export const Timeline = memo(function Timeline({
           <div className="now-line" style={{ top: nowOffset * TRACK_HEIGHT }} aria-hidden="true" />
         ) : null}
 
-        {blocks.map((b) => {
-          // One pixel of air between neighbours so adjacent blocks read as
-          // separate stretches rather than one continuous slab.
-          const height = Math.max(4, b.size * TRACK_HEIGHT - 1)
-          const accent =
-            b.kind === 'idle' ? '#3a465a' : productivityColor(b.productivity)
+        {rows.map((row) => {
+          if (row.kind === 'cluster') {
+            const label = `${row.members.length} short blocks · ${duration(row.seconds)}`
+            return (
+              <div
+                key={row.id}
+                className="block cluster"
+                style={{ top: row.top, height: row.height }}
+                role="button"
+                tabIndex={0}
+                aria-label={`${label}. Activate to show them individually.`}
+                title={`${label} — click to expand`}
+                onClick={() => setExpanded((prev) => [...prev, row.id])}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return
+                  e.preventDefault()
+                  setExpanded((prev) => [...prev, row.id])
+                }}
+              >
+                {/* A few ticks in the members' own colours, so the band still
+                    says what kind of time it stands for. */}
+                <span className="cluster-ticks" aria-hidden="true">
+                  {row.members.slice(0, 5).map((m) => (
+                    <i
+                      key={m.id}
+                      style={{
+                        background:
+                          m.kind === 'idle' ? 'var(--idle-line)' : projectColorFor(m.label),
+                      }}
+                    />
+                  ))}
+                </span>
+                {row.height >= TINY_PX ? <span className="cluster-text">{label}</span> : null}
+              </div>
+            )
+          }
+
+          const b = row.block
+          const height = row.height
+          const accent = b.kind === 'idle' ? undefined : productivityColor(b.productivity)
           const session = b.kind === 'session' ? sessions.find((s) => s.id === b.id) : null
           const block = b.kind === 'idle' ? idle.find((i) => i.startTime === b.start) : null
           const describe = `${b.label} · ${duration(b.durationSeconds)} · ${timeOfDay(b.start)}–${timeOfDay(b.end)}`
-          const select = () => {
-            onSelect(session ?? null)
-            onSelectIdle?.(block ?? null)
+          const select = (additive: boolean) => {
+            onSelect(session ?? null, additive)
+            // An additive pick is building a merge set; clearing the away block
+            // then would drop the panel back to a single-block view.
+            if (!additive || !session) onSelectIdle?.(block ?? null)
           }
+          // Too short for a label: a pale empty box reads as a rendering fault,
+          // whereas a solid rounded tick reads as a deliberate mark. Only ever
+          // a lone short block — a run of them is a cluster by now.
+          const tick = height < TINY_PX
           return (
             <div
               key={b.id}
-              className={`block${b.kind === 'idle' ? ' idle' : ''}${
-                selectedId === b.id ? ' selected' : ''
+              className={`block${b.kind === 'idle' ? ' idle' : ''}${tick ? ' tick' : ''}${
+                selected.has(b.id) ? ' selected' : ''
               }`}
               style={{
-                top: b.offset * TRACK_HEIGHT,
+                top: row.top,
                 height,
-                background: b.kind === 'idle' ? undefined : blockFill(projectColorFor(b.label)),
-                borderLeftColor: accent,
+                background:
+                  b.kind === 'idle'
+                    ? undefined
+                    : tick
+                      ? projectColorFor(b.label)
+                      : blockFill(projectColorFor(b.label)),
+                // The rail is a pseudo-element, so the productivity colour is
+                // handed to CSS as a variable rather than a border.
+                ['--block-rail' as string]: accent,
               }}
               role="button"
               tabIndex={0}
               aria-label={describe}
-              onClick={select}
+              onClick={(e) => select(e.ctrlKey || e.metaKey || e.shiftKey)}
               onKeyDown={(e) => {
                 if (e.key !== 'Enter' && e.key !== ' ') return
                 e.preventDefault() // Space must activate, not scroll the page.
-                select()
+                select(e.ctrlKey || e.metaKey || e.shiftKey)
               }}
               title={describe}
             >

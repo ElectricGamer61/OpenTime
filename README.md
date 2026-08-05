@@ -74,6 +74,11 @@ and time in deep work are visible against each other.
 **Weekly view.** Seven-day totals, per-day stacked bars, category rollups, and
 the average focus score.
 
+**Light and dark.** Both themes ship and both are looked at — `npx electron
+scripts/screenshot.cjs <dir> --theme=both` captures each view in each, and
+refuses to write a capture whose resolved `color-scheme` is not the one asked
+for. Settings → Appearance follows the OS or pins one.
+
 **Export and backup.** Sessions CSV, a daily-summary CSV, and a full JSON backup
 that restores everything. The data is one plain-JSON file per day in a folder you
 can open, copy or delete.
@@ -392,7 +397,7 @@ Notes for a real release:
 npm test
 ```
 
-249 tests, node environment, no Electron and no display required:
+260 tests, node environment, no Electron and no display required:
 
 | Suite | Covers |
 |---|---|
@@ -412,6 +417,19 @@ npm test
 | `calendar.test.ts` | OAuth URL construction, refresh margin, event mapping, revoked grants, network and malformed-response failures |
 | `demo.test.ts` | the demo generator produces real, non-overlapping, deterministic days |
 
+Those cover the engine. The *product* is covered by a second suite:
+
+```bash
+npm run test:e2e
+```
+
+`scripts/e2e.mjs` boots the real main process against a throwaway user-data
+directory and drives the renderer over the Chrome DevTools Protocol the way a
+person would — clicking tabs, clicking timeline blocks, ctrl-clicking to merge,
+typing into the inspector, flipping the theme — asserting through the same IPC
+surface the UI uses. 45 checks, and it writes a screenshot of each view beside
+`results.json` so a run can be looked at as well as read.
+
 The tracker tests drive the engine at its real polling cadence rather than in
 one jump — ticking in a single leap would look like a sampling gap and split the
 session, which is correct behaviour but not what those tests are checking.
@@ -427,7 +445,8 @@ what was left out on purpose and what should be reworked, is in
 [`docs/feature-inventory.md`](docs/feature-inventory.md).
 
 - **Month and custom-range views.** Storage and export already handle arbitrary
-  ranges; only the view is missing. Largest remaining gap.
+  ranges, and *export* now offers a range picker; only a reporting **view** over
+  an arbitrary range is missing. Largest remaining gap.
 - **Auto-update.** No update feed. The natural choice is `electron-updater`
   against public GitHub Releases; shipping a feed only the author can publish to
   would be worse than shipping none.
@@ -436,7 +455,6 @@ what was left out on purpose and what should be reworked, is in
 - **SQLite backend.** No longer needed for durability or memory — the sharded,
   journalled store fixed both. It would buy indexed cross-day queries, worth doing
   when a reporting view needs them.
-- **Light theme.** The CSS is fully tokenised for one; nobody has picked values.
 - **Accessibility audit.** Keyboard navigation and focus order are reasonable but
   unaudited.
 - **Long-run soak test.** The engine is designed for a fixed memory ceiling and
