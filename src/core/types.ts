@@ -146,6 +146,8 @@ export interface Settings {
   seedDemoWhenUnavailable: boolean
   launchAtLogin: boolean
   notificationsEnabled: boolean
+  /** Appearance. 'system' follows the OS; the other two pin it. */
+  theme: 'system' | 'light' | 'dark'
   /** Epoch ms the first-run checklist was completed; undefined until then. */
   onboardedAt?: number
   calendar: CalendarSettings

@@ -14,6 +14,14 @@ const { app, BrowserWindow } = require('electron')
 const outDir = process.argv[2] || 'screenshots'
 const root = path.dirname(__dirname)
 
+/**
+ * Which themes to capture. Both are shipped, so both have to be looked at —
+ * a light theme nobody has rendered is a light theme that is broken.
+ * `--theme=light|dark|both`; the default keeps the README filenames untouched.
+ */
+const themeArg = (process.argv.find((a) => a.startsWith('--theme=')) || '').split('=')[1]
+const THEMES = themeArg === 'both' ? ['light', 'dark'] : [themeArg || 'dark']
+
 /** Tab label to click, and the filename README already links to. */
 const TABS = [
   { tab: 'Today', file: 'today.png' },
@@ -42,7 +50,40 @@ const win = new BrowserWindow({
 await win.loadFile(path.join(root, 'dist/renderer/index.html'))
 await new Promise((r) => setTimeout(r, 2500))
 
-for (const { tab, file: name } of TABS) {
+for (const theme of THEMES) {
+  // Drive the real Appearance control. This script loads the renderer without
+  // the preload bridge (see below), so there is no `window.opentime` to call —
+  // and stamping `data-theme` directly is undone the moment a view mounts,
+  // because the app owns that attribute and re-applies it from settings.
+  await win.webContents.executeJavaScript(`
+    (async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+      const nav = (label) =>
+        [...document.querySelectorAll('.nav-item')].find((b) => b.textContent.trim() === label)
+      nav('Settings').click()
+      await wait(600)
+      const button = [...document.querySelectorAll('.seg button')].find(
+        (b) => b.textContent.trim().toLowerCase() === ${JSON.stringify(theme)}
+      )
+      if (!button) throw new Error('no Appearance option for ${theme}')
+      button.click()
+      await wait(300)
+      const save = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save')
+      if (save && !save.disabled) save.click()
+      await wait(600)
+    })()
+  `)
+  const applied = await win.webContents.executeJavaScript(
+    `getComputedStyle(document.documentElement).getPropertyValue('color-scheme').trim()`
+  )
+  // Without this a "dark" capture that silently rendered light looks like a
+  // theme that works, which is the one thing these screenshots must not do.
+  if (applied !== theme) throw new Error(`asked for ${theme} but color-scheme is "${applied}"`)
+
+  const suffix = THEMES.length > 1 ? `-${theme}` : ''
+
+for (const { tab, file: rawName } of TABS) {
+  const name = rawName.replace(/\.png$/, `${suffix}.png`)
   const clicked = await win.webContents.executeJavaScript(`
     (() => {
       const btn = [...document.querySelectorAll('.nav-item')].find(
@@ -83,6 +124,7 @@ for (const { tab, file: name } of TABS) {
   const file = path.join(outDir, name)
   await fs.writeFile(file, image.toPNG())
   console.log('wrote', file)
+}
 }
 
 app.exit(0)

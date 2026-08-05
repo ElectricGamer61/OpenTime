@@ -133,10 +133,19 @@ details, so each kind of wrongness has a fix:
 | Work the machine could not see | **Manual entry** |
 | Time away was actually work | **Claim** the away block |
 
-Two invariants hold across all of them: duration is always recomputed from
-timestamps rather than trusted, and claiming an away block removes the block, so
-the same minutes are never counted twice. Manual entries that would overlap
-tracked time are refused with an explanation rather than silently double-counted.
+All seven are reachable from the review panel: retag, split and delete from a
+selected block, **retime** from the same panel, **merge** by ctrl-clicking a
+second block on the timeline, manual entry with nothing selected, and claim from
+an away block. Merge and retime existed in `core/edits.ts` with tests but had no
+UI at all until this pass, which made two rows of this table untrue.
+
+Three invariants hold across all of them: duration is always recomputed from
+timestamps rather than trusted; claiming an away block removes the block, so the
+same minutes are never counted twice; and a correction may not be written into a
+day its own timestamps do not belong to — `applyEdit` checks the span against the
+tracking day and refuses rather than misfiling it. Manual entries that would
+overlap tracked time are refused with an explanation rather than silently
+double-counted.
 
 ## 8. Calendar context
 
@@ -165,9 +174,11 @@ already selectable in Settings for it.
 | Status | **Partial** |
 | Where | `src/core/aggregate.ts`, `src/core/export.ts` |
 
-Today and a trailing week are built. Arbitrary ranges are supported by the
-storage layer and by export (`fromKey`/`toKey`), but there is no month or
-custom-range **view** yet. That is the largest remaining UI gap.
+Today and a trailing week are built. Export now offers a range (all time / 7 /
+30 / 90 days) and states how many stored days actually fall inside it — until
+this pass the UI passed no range at all, so every export was the whole history
+whatever was asked for. There is still no month or custom-range **view**; that
+is the largest remaining UI gap.
 
 ## 10. Goals
 
@@ -324,8 +335,8 @@ forgetting to start it again and losing the afternoon.
 | **Auto-update** | Natural choice is `electron-updater` against public GitHub Releases. Shipping an update feed only the author can publish to is worse than shipping none. |
 | **Codesigning and notarisation** | Required before macOS distribution; needs an Apple Developer ID. |
 | **Calendar write-back** | Scope is already selectable. Needs a clear model for what OpenTime is allowed to put on someone's calendar. |
-| **Light theme** | CSS is fully tokenised for one; nobody has picked the values. |
 | **Accessibility audit** | Keyboard order is reasonable but unaudited. |
+| **Update check** | Still none, and deliberately so — see Auto-update above. A checker that only points at GitHub Releases would also be the app's first unsolicited network call, which §12 rules out. |
 | **Long-run soak test** | The engine is designed for a fixed memory ceiling and the store now has a bounded footprint, but neither has been run for days on real hardware. |
 
 ## Not built on purpose

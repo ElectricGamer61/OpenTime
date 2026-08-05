@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from 'react'
 
+import { timeWithinDay } from '../../core/day'
 import type { IdleBlock, Productivity, Project, Session } from '../../core/types'
 import type { EditResult, RecategorizeRequest, SessionEdit } from '../../shared/ipc'
 import { duration, timeOfDay } from '../lib/format'
@@ -14,27 +15,15 @@ function toTimeInput(ts: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-/**
- * Read `HH:MM` back onto the calendar date of `anchor`.
- *
- * Anchoring on the block being edited rather than on "today" is what makes this
- * correct while reviewing a previous day — and what stops a 1am correction on a
- * late-night session landing 24 hours away.
- */
-function fromTimeInput(value: string, anchor: number): number | null {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
-  if (!match) return null
-  const d = new Date(anchor)
-  d.setHours(Number(match[1]), Number(match[2]), 0, 0)
-  return d.getTime()
-}
-
 export interface InspectorProps {
+  /** The block being edited — the last one clicked. */
   session: Session | null
+  /** Every selected session; two or more unlocks merging. */
+  selection: Session[]
   idle: IdleBlock | null
   dayKey: string
-  /** Anchor for manual entries when nothing is selected — the day being viewed. */
-  dayAnchor: number
+  /** Rollover hour, so an entered time lands on the right tracking day. */
+  dayStartHour: number
   projects: Project[]
   onApply(request: RecategorizeRequest): void
   onEdit(edit: SessionEdit): Promise<EditResult>
@@ -45,16 +34,18 @@ export interface InspectorProps {
  *
  * Automatic capture gets the shape of a day roughly right and the details
  * regularly wrong, so every kind of wrongness needs a fix here: the wrong label
- * (retag), the wrong boundaries (split), a block that should not exist (delete),
- * time the machine could not see (manual entry), and time away that was actually
- * work (claim an away block). Rules learned here are the top-priority layer in
- * the categoriser, so a correction is permanent.
+ * (retag), the wrong boundaries (split or retime), a block that should not exist
+ * (delete), two blocks that were really one (merge), time the machine could not
+ * see (manual entry), and time away that was actually work (claim an away
+ * block). Rules learned here are the top-priority layer in the categoriser, so a
+ * correction is permanent.
  */
 export const Inspector = memo(function Inspector({
   session,
+  selection,
   idle,
   dayKey,
-  dayAnchor,
+  dayStartHour,
   projects,
   onApply,
   onEdit,
@@ -64,9 +55,26 @@ export const Inspector = memo(function Inspector({
   const [remember, setRemember] = useState<'none' | 'app' | 'keyword'>('none')
   const [note, setNote] = useState('')
   const [splitAt, setSplitAt] = useState('')
-  const [mode, setMode] = useState<'retag' | 'split' | 'manual'>('retag')
+  const [times, setTimes] = useState({ start: '', end: '' })
+  const [mode, setMode] = useState<'retag' | 'split' | 'retime' | 'manual'>('retag')
   const [manual, setManual] = useState({ start: '', end: '', category: '' })
   const [error, setError] = useState('')
+
+  /**
+   * Read `HH:MM` back onto the tracking day being edited.
+   *
+   * A tracking day runs from the rollover hour through to the same hour the next
+   * morning, so `timeWithinDay` is what puts a 1am correction on the day the UI
+   * is showing rather than 23 hours away on the previous one.
+   */
+  const fromTimeInput = (value: string): number | null => {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+    if (!match) return null
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+    if (hours > 23 || minutes > 59) return null
+    return timeWithinDay(dayKey, hours, minutes, dayStartHour)
+  }
 
   useEffect(() => {
     setError('')
@@ -76,6 +84,7 @@ export const Inspector = memo(function Inspector({
       setProductivity(session.productivity)
       setNote(session.note || '')
       setSplitAt(toTimeInput(session.startTime + (session.endTime - session.startTime) / 2))
+      setTimes({ start: toTimeInput(session.startTime), end: toTimeInput(session.endTime) })
       setRemember('none')
       return
     }
@@ -90,6 +99,64 @@ export const Inspector = memo(function Inspector({
     setError('')
     const result = await onEdit(edit)
     if (!result.ok) setError(result.message || 'That edit could not be applied.')
+  }
+
+  // ── Two or more blocks picked: merge them ──────────────────────────────────
+  if (selection.length > 1) {
+    const sorted = [...selection].sort((a, b) => a.startTime - b.startTime)
+    const first = sorted[0]
+    const last = sorted[sorted.length - 1]
+    const spanSeconds = Math.round((last.endTime - first.startTime) / 1000)
+    const trackedSeconds = sorted.reduce((sum, s) => sum + s.durationSeconds, 0)
+    const absorbed = spanSeconds - trackedSeconds
+
+    return (
+      <div className="inspector">
+        <div className="inspector-head">
+          <div className="inspector-title">{selection.length} blocks selected</div>
+          <div className="inspector-when">
+            {timeOfDay(first.startTime)} – {timeOfDay(last.endTime)} · {duration(spanSeconds)}
+          </div>
+        </div>
+
+        <div className="hint">
+          Merging keeps the label of the longest block and spans from the first start to the last
+          end.
+          {/* Absorbing a gap adds time that was never observed, so it has to be
+              stated before the click rather than discovered in the totals. */}
+          {absorbed > 30 ? (
+            <>
+              {' '}
+              The gaps between them — <b>{duration(absorbed)}</b> — are absorbed into the merged
+              block.
+            </>
+          ) : null}
+        </div>
+
+        <div className="merge-list">
+          {sorted.map((s) => (
+            <div className="merge-item" key={s.id}>
+              <span className="merge-item-name">{s.category}</span>
+              <span className="merge-item-time">
+                {timeOfDay(s.startTime)} · {duration(s.durationSeconds)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="row">
+          <button
+            className="btn primary"
+            onClick={() =>
+              void submit({ kind: 'merge', dayKey, sessionIds: sorted.map((s) => s.id) })
+            }
+          >
+            Merge into one block
+          </button>
+        </div>
+        {error ? <div className="inspector-error">{error}</div> : null}
+      </div>
+    )
   }
 
   // ── Away block: claim it as work ───────────────────────────────────────────
@@ -170,7 +237,7 @@ export const Inspector = memo(function Inspector({
           <Empty
             glyph={<IconEmptyPointer />}
             title="Nothing selected"
-            hint="Pick a block on the timeline to retag, split or delete it — or record time OpenTime could not see."
+            hint="Pick a block on the timeline to retag, retime, split or delete it. Ctrl-click a second block to merge them — or record time OpenTime could not see."
           />
           <div className="row" style={{ justifyContent: 'center' }}>
             <button className="btn ghost" onClick={() => setMode('manual')}>
@@ -229,8 +296,8 @@ export const Inspector = memo(function Inspector({
             className="btn primary"
             disabled={!manual.start || !manual.end || !manual.category.trim()}
             onClick={() => {
-              const start = fromTimeInput(manual.start, dayAnchor)
-              const end = fromTimeInput(manual.end, dayAnchor)
+              const start = fromTimeInput(manual.start)
+              const end = fromTimeInput(manual.end)
               if (start === null || end === null) {
                 setError('Those times could not be read.')
                 return
@@ -300,7 +367,7 @@ export const Inspector = memo(function Inspector({
             <button
               className="btn primary"
               onClick={() => {
-                const at = fromTimeInput(splitAt, session.startTime)
+                const at = fromTimeInput(splitAt)
                 if (at === null) {
                   setError('That time could not be read.')
                   return
@@ -309,6 +376,59 @@ export const Inspector = memo(function Inspector({
               }}
             >
               Split
+            </button>
+            <button className="btn ghost" onClick={() => setMode('retag')}>
+              Cancel
+            </button>
+          </div>
+          {error ? <div className="inspector-error">{error}</div> : null}
+        </>
+      ) : mode === 'retime' ? (
+        <>
+          <div className="hint">
+            Move the boundaries when the capture caught the wrong moment — a meeting that started
+            before you opened the laptop, or a block that ran on after you stopped.
+          </div>
+          <div className="row">
+            <div className="field" style={{ flex: 1 }}>
+              <label htmlFor="insp-retime-start">From</label>
+              <input
+                id="insp-retime-start"
+                type="time"
+                value={times.start}
+                onChange={(e) => setTimes({ ...times, start: e.target.value })}
+              />
+            </div>
+            <div className="field" style={{ flex: 1 }}>
+              <label htmlFor="insp-retime-end">To</label>
+              <input
+                id="insp-retime-end"
+                type="time"
+                value={times.end}
+                onChange={(e) => setTimes({ ...times, end: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="row">
+            <button
+              className="btn primary"
+              onClick={() => {
+                const start = fromTimeInput(times.start)
+                const end = fromTimeInput(times.end)
+                if (start === null || end === null) {
+                  setError('Those times could not be read.')
+                  return
+                }
+                void submit({
+                  kind: 'retime',
+                  dayKey,
+                  sessionId: session.id,
+                  startTime: start,
+                  endTime: end,
+                })
+              }}
+            >
+              Save times
             </button>
             <button className="btn ghost" onClick={() => setMode('retag')}>
               Cancel
@@ -415,12 +535,18 @@ export const Inspector = memo(function Inspector({
             <button className="btn ghost small" onClick={() => setMode('split')}>
               Split…
             </button>
+            <button className="btn ghost small" onClick={() => setMode('retime')}>
+              Retime…
+            </button>
             <button
               className="btn ghost danger small"
               onClick={() => void submit({ kind: 'delete', dayKey, sessionId: session.id })}
             >
               Delete block
             </button>
+          </div>
+          <div className="inspector-tip">
+            Ctrl-click another block on the timeline to merge it with this one.
           </div>
           {error ? <div className="inspector-error">{error}</div> : null}
         </>

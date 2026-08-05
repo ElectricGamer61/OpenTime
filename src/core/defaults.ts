@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   seedDemoWhenUnavailable: true,
   launchAtLogin: false,
   notificationsEnabled: true,
+  theme: 'system',
   calendar: {
     connected: false,
     clientId: '',
@@ -190,6 +191,7 @@ export function sanitizeSettings(input: Partial<Settings> | null | undefined): S
       raw.seedDemoWhenUnavailable === undefined ? true : !!raw.seedDemoWhenUnavailable,
     launchAtLogin: !!raw.launchAtLogin,
     notificationsEnabled: raw.notificationsEnabled === undefined ? true : !!raw.notificationsEnabled,
+    theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',
     onboardedAt: Number.isFinite(Number(raw.onboardedAt)) && Number(raw.onboardedAt) > 0
       ? Number(raw.onboardedAt)
       : undefined,

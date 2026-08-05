@@ -15,11 +15,35 @@ import { duration, longDate, percent } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
 
 export function TodayView({ app }: { app: OpenTimeState }) {
-  const [selected, setSelected] = useState<Session | null>(null)
+  // A list rather than one session: two or more picked blocks is a pending
+  // merge, and the last one picked is the block the panel edits.
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectedIdle, setSelectedIdle] = useState<IdleBlock | null>(null)
   const reviewRef = useRef<HTMLDivElement>(null)
   const day = app.day
   const settings = app.settings
+
+  // Resolve ids against the current day, so a block removed by an edit (or by
+  // switching day) drops out of the selection instead of editing a ghost.
+  const selection = useMemo(() => {
+    const byId = new Map((day?.sessions || []).map((s) => [s.id, s]))
+    return selectedIds.map((id) => byId.get(id)).filter((s): s is Session => !!s)
+  }, [day, selectedIds])
+  const selected = selection.length ? selection[selection.length - 1] : null
+
+  const pick = (session: Session | null, additive: boolean) => {
+    if (!session) {
+      setSelectedIds([])
+      return
+    }
+    setSelectedIds((prev) => {
+      if (!additive) return [session.id]
+      // Ctrl-clicking a picked block takes it back out of the set.
+      return prev.includes(session.id)
+        ? prev.filter((id) => id !== session.id)
+        : [...prev, session.id]
+    })
+  }
 
   // The review panel sits at the bottom of the right-hand column, usually far
   // below the fold — without this, clicking a timeline block looks like it did
@@ -64,21 +88,29 @@ export function TodayView({ app }: { app: OpenTimeState }) {
   const hasSelection = !!(selected || selectedIdle)
   const reviewCard = (
     <div className="card" ref={reviewRef} key="review">
-      <h2 className="card-title">Review</h2>
+      <h2 className="card-title">
+        Review
+        {selection.length > 1 ? (
+          <button className="btn ghost small" onClick={() => setSelectedIds([])}>
+            Clear selection
+          </button>
+        ) : null}
+      </h2>
       <Inspector
         session={selected}
+        selection={selection}
         idle={selectedIdle}
         dayKey={day.dayKey}
-        dayAnchor={dayStartTs(day.dayKey, settings.dayStartHour) + 8 * 3600_000}
+        dayStartHour={settings.dayStartHour}
         projects={app.projects}
         onApply={(request) => {
           void app.recategorize(request)
-          setSelected(null)
+          setSelectedIds([])
         }}
         onEdit={async (edit) => {
           const result = await app.editSession(edit)
           if (result.ok) {
-            setSelected(null)
+            setSelectedIds([])
             setSelectedIdle(null)
           }
           return result
@@ -186,10 +218,11 @@ export function TodayView({ app }: { app: OpenTimeState }) {
         </div>
 
         <div className="grid cols-2">
-          {/* The timeline is a fixed height, so without this it stretches to
-              match the taller right-hand column and trails a large empty
-              area under the legend on tall windows. */}
-          <div className="card" style={{ alignSelf: 'start' }}>
+          {/* The timeline is a fixed height and the column beside it is a tall
+              stack, so it neither stretches (which trails empty space under the
+              legend) nor scrolls away: it sticks, and stays readable while the
+              breakdowns that describe it scroll past. */}
+          <div className="card timeline-card">
             <h2 className="card-title">
               Timeline
               <span className="hint">Click a block to review it</span>
@@ -201,8 +234,8 @@ export function TodayView({ app }: { app: OpenTimeState }) {
               idle={day.idle}
               events={day.events}
               projects={app.projects}
-              selectedId={selected?.id ?? null}
-              onSelect={setSelected}
+              selectedIds={selectedIds}
+              onSelect={pick}
               onSelectIdle={setSelectedIdle}
             />
             {/* The timeline carries two colour channels at once — fill for the

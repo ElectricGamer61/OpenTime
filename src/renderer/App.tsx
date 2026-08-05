@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Wordmark } from './components/Brand'
 import { Empty } from './components/Empty'
@@ -25,6 +25,16 @@ const TABS: Array<{ id: Tab; label: string; Icon: ComponentType<{ className?: st
 export function App() {
   const app = useOpenTime()
   const [tab, setTab] = useState<Tab>('today')
+
+  // Every colour is declared once with `light-dark()`, so choosing a theme is
+  // only a matter of what `color-scheme` the root resolves to: no attribute
+  // means "follow the OS", and the attribute pins it.
+  const theme = app.settings?.theme ?? 'system'
+  useEffect(() => {
+    const root = document.documentElement
+    if (theme === 'system') root.removeAttribute('data-theme')
+    else root.setAttribute('data-theme', theme)
+  }, [theme])
 
   // "Click a day to open it" has to mean it: selecting a day from the weekly
   // view both loads that day and lands on the view that shows it.

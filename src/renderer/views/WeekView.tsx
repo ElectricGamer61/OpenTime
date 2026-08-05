@@ -85,6 +85,27 @@ export function WeekView({
             dayStartHour={settings.dayStartHour}
             onSelect={onOpenDay}
           />
+          {/* Each column stacks four things and the away segment caps every
+              one of them, so without this the grey top reads as an empty
+              container rather than as time away. */}
+          <div className="timeline-legend">
+            <span>
+              <i style={{ background: 'var(--productive)' }} />
+              Productive
+            </span>
+            <span>
+              <i style={{ background: 'var(--neutral)' }} />
+              Neutral
+            </span>
+            <span>
+              <i style={{ background: 'var(--distracting)' }} />
+              Distracting
+            </span>
+            <span>
+              <i style={{ background: 'var(--idle)' }} />
+              Away
+            </span>
+          </div>
         </div>
 
         <div className="grid cols-2">

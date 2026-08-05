@@ -7,27 +7,39 @@ import { dayStartTs } from '../../core/day'
 import { Empty } from './Empty'
 
 /**
- * Bar fills in the weekly stack are washes rather than the raw productivity
- * tokens. Those tokens are tuned to be read as a 8px swatch; at 150px of solid
- * area they overwhelm everything else on the page, which is the opposite of
- * what a weekly overview is for.
+ * Bar fills in the weekly stack.
+ *
+ * The productivity tokens are tuned to be read as an 8px swatch; at a couple of
+ * hundred pixels of solid area they overwhelm everything else on the page,
+ * which is the opposite of what a weekly overview is for. `color-mix` pulls
+ * each one most of the way towards the card surface, so the bar keeps the hue
+ * that identifies it and loses the shout — and because the mix target is a
+ * theme token, the same declaration works in light and dark.
  */
 const STACK_FILLS: Record<string, string> = {
-  productive: 'linear-gradient(180deg, rgba(70, 207, 135, 0.85), rgba(70, 207, 135, 0.5))',
-  neutral: 'linear-gradient(180deg, rgba(115, 134, 160, 0.7), rgba(115, 134, 160, 0.42))',
-  distracting: 'linear-gradient(180deg, rgba(242, 104, 127, 0.8), rgba(242, 104, 127, 0.48))',
-  // Away time caps every column, so at full opacity it reads as a solid box
-  // sitting on top of the day rather than as absence.
-  idle: 'rgba(34, 42, 55, 0.5)',
+  productive: 'color-mix(in srgb, var(--productive) 62%, var(--surface))',
+  neutral: 'color-mix(in srgb, var(--neutral) 46%, var(--surface))',
+  distracting: 'color-mix(in srgb, var(--distracting) 58%, var(--surface))',
+  // Away time caps every column, so it has to read as absence rather than as a
+  // solid box sitting on top of the day.
+  idle: 'var(--idle)',
 }
 
-/** Stat tile: one headline number with a supporting line and optional meter. */
+/**
+ * Stat tile: one headline number with a supporting line and optional meter.
+ *
+ * The number itself is always ink. A row of headline figures set in saturated
+ * green and red reads as a row of alerts — the colour ends up ranking nothing
+ * because everything has some. The tile's colour lives in a 7px dot beside the
+ * label and in the meter, which is enough to tie it to the timeline and the
+ * legend without turning the dashboard into a traffic light.
+ */
 export const Stat = memo(function Stat({
   label,
   value,
   foot,
   meter,
-  color = 'var(--accent)',
+  color,
 }: {
   label: string
   value: string
@@ -38,14 +50,20 @@ export const Stat = memo(function Stat({
 }) {
   return (
     <div className="stat">
-      <div className="stat-label">{label}</div>
-      <div className="stat-value" style={{ color }}>
-        {value}
+      <div className="stat-label">
+        {color ? <i className="stat-dot" style={{ background: color }} /> : null}
+        {label}
       </div>
+      <div className="stat-value">{value}</div>
       {foot ? <div className="stat-foot">{foot}</div> : null}
       {meter !== undefined ? (
         <div className="meter">
-          <i style={{ width: `${Math.min(1, Math.max(0, meter)) * 100}%`, background: color }} />
+          <i
+            style={{
+              width: `${Math.min(1, Math.max(0, meter)) * 100}%`,
+              background: color || 'var(--accent)',
+            }}
+          />
         </div>
       ) : null}
     </div>

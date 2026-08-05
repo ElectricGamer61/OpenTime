@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
+import { lastNDayKeys } from '../../core/day'
 import type { Settings } from '../../core/types'
 import type { ExportFormat } from '../../shared/ipc'
 import { IconInfo } from './Icons'
@@ -11,6 +12,20 @@ const RETENTION_CHOICES = [
   { value: 180, label: '6 months' },
   { value: 365, label: '1 year' },
   { value: 730, label: '2 years' },
+]
+
+/**
+ * Export ranges.
+ *
+ * Storage and the export builder have always taken a `fromKey`/`toKey`; until
+ * now the UI passed neither, so every export was the whole history whatever the
+ * user wanted. `days: 0` keeps meaning "everything".
+ */
+const RANGE_CHOICES = [
+  { value: 0, label: 'All time' },
+  { value: 7, label: 'Last 7 days' },
+  { value: 30, label: 'Last 30 days' },
+  { value: 90, label: 'Last 90 days' },
 ]
 
 /**
@@ -31,6 +46,7 @@ export function DataSettings({
 }) {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const [rangeDays, setRangeDays] = useState(0)
 
   const run = async (fn: () => Promise<{ ok: boolean; message: string }>) => {
     setBusy(true)
@@ -40,8 +56,27 @@ export function DataSettings({
     setMessage(result.message)
   }
 
-  const exportAs = (format: ExportFormat) => run(() => app.exportData({ format }))
   const days = app.historyKeys.length
+
+  // The bounds are day keys, and the count is how many stored days actually
+  // fall inside them — "Last 30 days" over a fortnight of history is 14 days,
+  // and saying 30 would be a promise the file does not keep.
+  const range = useMemo(() => {
+    if (!rangeDays) return { count: days }
+    const latest = app.historyKeys[app.historyKeys.length - 1]
+    if (!latest) return { count: 0 }
+    const keys = lastNDayKeys(rangeDays, latest)
+    const fromKey = keys[0]
+    const toKey = keys[keys.length - 1]
+    return {
+      fromKey,
+      toKey,
+      count: app.historyKeys.filter((k) => k >= fromKey && k <= toKey).length,
+    }
+  }, [rangeDays, app.historyKeys, days])
+
+  const exportAs = (format: ExportFormat) =>
+    run(() => app.exportData({ format, fromKey: range.fromKey, toKey: range.toKey }))
 
   return (
     <div className="card">
@@ -54,22 +89,58 @@ export function DataSettings({
         without OpenTime, and yours to copy, sync or delete.
       </p>
 
+      <div className="setting-row">
+        <div>
+          <div className="setting-name">Export range</div>
+          <div className="setting-desc">
+            Which days the next export covers. A full backup always restores whatever it contains,
+            so a narrowed backup restores only those days.
+          </div>
+        </div>
+        <select
+          aria-label="Export range"
+          value={rangeDays}
+          onChange={(e) => setRangeDays(Number(e.target.value))}
+        >
+          {RANGE_CHOICES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="setting-row wide">
         <div>
           <div className="setting-name">Export</div>
           <div className="setting-desc">
             Sessions as CSV for a spreadsheet or an invoice, a day-by-day summary for a chart, or a
-            full backup that restores everything including settings and rules.
+            full backup that restores everything including settings and rules.{' '}
+            {range.count
+              ? `${range.count} stored day${range.count === 1 ? '' : 's'} in range.`
+              : 'No stored days in that range.'}
           </div>
         </div>
         <div className="row wrap">
-          <button className="btn" disabled={busy || !days} onClick={() => void exportAs('sessions-csv')}>
+          <button
+            className="btn"
+            disabled={busy || !range.count}
+            onClick={() => void exportAs('sessions-csv')}
+          >
             Sessions CSV
           </button>
-          <button className="btn" disabled={busy || !days} onClick={() => void exportAs('daily-csv')}>
+          <button
+            className="btn"
+            disabled={busy || !range.count}
+            onClick={() => void exportAs('daily-csv')}
+          >
             Daily CSV
           </button>
-          <button className="btn" disabled={busy || !days} onClick={() => void exportAs('backup-json')}>
+          <button
+            className="btn"
+            disabled={busy || !range.count}
+            onClick={() => void exportAs('backup-json')}
+          >
             Full backup
           </button>
         </div>

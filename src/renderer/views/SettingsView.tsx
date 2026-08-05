@@ -50,6 +50,25 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
 
   useEffect(() => setDraft(app.settings), [app.settings])
 
+  /**
+   * Preview the theme while it is still a draft.
+   *
+   * Every other setting on this page is invisible until saved, but a theme you
+   * cannot see is a theme you cannot choose. Leaving the page without saving
+   * puts the stored theme back, so the preview never outlives the decision.
+   */
+  const draftTheme = draft?.theme
+  const savedTheme = app.settings?.theme
+  useEffect(() => {
+    const root = document.documentElement
+    const apply = (value: string | undefined) => {
+      if (!value || value === 'system') root.removeAttribute('data-theme')
+      else root.setAttribute('data-theme', value)
+    }
+    apply(draftTheme)
+    return () => apply(savedTheme)
+  }, [draftTheme, savedTheme])
+
   if (!draft) return null
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(app.settings)
@@ -186,7 +205,15 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
             }
           >
             <div className="row">
-              <span className={`pill ${app.capture?.demo ? 'warn' : 'info'}`}>
+              {/* Generated capture is working as designed on a machine that
+                  cannot expose the focused window, so it is a fact to state,
+                  not a fault to flag in red. Only a degraded *real* adapter
+                  warrants the warning tone. */}
+              <span
+                className={`pill ${
+                  app.capture?.demo ? 'muted' : app.capture?.notice ? 'warn' : 'live'
+                }`}
+              >
                 {app.capture?.demo ? 'Generated' : app.capture?.notice ? 'Limited' : 'Live'}
               </span>
               <button className="btn" onClick={() => void app.reloadCapture()}>
@@ -322,6 +349,24 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
 
         <div className="card">
           <h2 className="card-title">Application</h2>
+          <Row
+            wide
+            name="Appearance"
+            desc="Follow the operating system, or pin OpenTime to one theme."
+          >
+            <div className="seg">
+              {(['system', 'light', 'dark'] as const).map((option) => (
+                <button
+                  key={option}
+                  className={draft.theme === option ? 'on' : ''}
+                  aria-pressed={draft.theme === option}
+                  onClick={() => patch({ theme: option })}
+                >
+                  {option[0].toUpperCase() + option.slice(1)}
+                </button>
+              ))}
+            </div>
+          </Row>
           <Row name="Launch at login" desc="Start OpenTime in the tray when you sign in.">
             <Toggle
               label="Launch at login"

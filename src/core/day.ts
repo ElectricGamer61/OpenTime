@@ -55,6 +55,40 @@ export function dayStartTs(key: string, dayStartHour = DEFAULT_DAY_START_HOUR): 
   return d.getTime()
 }
 
+/** Epoch ms at which the tracking day `key` ends (exclusive). */
+export function dayEndTs(key: string, dayStartHour = DEFAULT_DAY_START_HOUR): number {
+  const d = parseYmdLocal(key)
+  d.setHours(dayStartHour, 0, 0, 0)
+  d.setDate(d.getDate() + 1)
+  return d.getTime()
+}
+
+/** Whether an instant falls inside the tracking day `key`. */
+export function dayContains(key: string, ts: number, dayStartHour = DEFAULT_DAY_START_HOUR): boolean {
+  return ts >= dayStartTs(key, dayStartHour) && ts < dayEndTs(key, dayStartHour)
+}
+
+/**
+ * The instant a wall-clock `HH:MM` refers to *within* the tracking day `key`.
+ *
+ * A tracking day runs from `dayStartHour` on its own date through to
+ * `dayStartHour` the next morning, so an hour earlier than the boundary belongs
+ * to the following calendar date. Anchoring on the calendar date instead files
+ * a 2am entry on the previous tracking day while the UI says otherwise — the
+ * same local-vs-boundary mistake `dayKey` exists to prevent.
+ */
+export function timeWithinDay(
+  key: string,
+  hours: number,
+  minutes: number,
+  dayStartHour = DEFAULT_DAY_START_HOUR
+): number {
+  const d = parseYmdLocal(key)
+  if (hours < dayStartHour) d.setDate(d.getDate() + 1)
+  d.setHours(hours, minutes, 0, 0)
+  return d.getTime()
+}
+
 /** Inclusive list of day keys between two keys, ascending. */
 export function dayKeyRange(startKey: string, endKey: string): string[] {
   const out: string[] = []
