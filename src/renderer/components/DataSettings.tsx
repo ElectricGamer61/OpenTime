@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import type { Settings } from '../../core/types'
 import type { ExportFormat } from '../../shared/ipc'
+import { IconInfo } from './Icons'
 import type { OpenTimeState } from '../state/useOpenTime'
 
 const RETENTION_CHOICES = [
@@ -159,7 +160,7 @@ export function DataSettings({
 
       {message ? (
         <div className="notice" style={{ marginTop: 12, marginBottom: 0 }}>
-          <span>ⓘ</span>
+          <IconInfo />
           <div>{message}</div>
         </div>
       ) : null}

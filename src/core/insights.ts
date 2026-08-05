@@ -73,8 +73,10 @@ function hourLabel(hour: number): string {
 }
 
 function hours(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.round((seconds % 3600) / 60)
+  // Round to whole minutes first so 7h 59m 40s reads "8h", never "7h 60m".
+  const totalMinutes = Math.round(seconds / 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
   if (h && m) return `${h}h ${m}m`
   if (h) return `${h}h`
   return `${m}m`

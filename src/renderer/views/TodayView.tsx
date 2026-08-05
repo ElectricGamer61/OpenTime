@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { summarizeDay } from '../../core/aggregate'
 import { dayStartTs } from '../../core/day'
@@ -17,8 +17,22 @@ import type { OpenTimeState } from '../state/useOpenTime'
 export function TodayView({ app }: { app: OpenTimeState }) {
   const [selected, setSelected] = useState<Session | null>(null)
   const [selectedIdle, setSelectedIdle] = useState<IdleBlock | null>(null)
+  const reviewRef = useRef<HTMLDivElement>(null)
   const day = app.day
   const settings = app.settings
+
+  // The review panel sits at the bottom of the right-hand column, usually far
+  // below the fold — without this, clicking a timeline block looks like it did
+  // nothing at all. `nearest` means an already-visible panel never moves.
+  useEffect(() => {
+    if (!selected && !selectedIdle) return
+    reviewRef.current?.scrollIntoView({
+      block: 'nearest',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth',
+    })
+  }, [selected, selectedIdle])
 
   // The single aggregation pass for this view. Everything below reads from it.
   const summary = useMemo(
@@ -41,10 +55,37 @@ export function TodayView({ app }: { app: OpenTimeState }) {
 
   if (!day || !settings) return null
 
-  const isToday = day.dayKey === app.weekKeys[app.weekKeys.length - 1]
+  const todayKey = app.weekKeys[app.weekKeys.length - 1]
+  const isToday = day.dayKey === todayKey
   const trackedShare = summary.totalSeconds
     ? summary.productiveSeconds / summary.totalSeconds
     : 0
+
+  const hasSelection = !!(selected || selectedIdle)
+  const reviewCard = (
+    <div className="card" ref={reviewRef} key="review">
+      <h2 className="card-title">Review</h2>
+      <Inspector
+        session={selected}
+        idle={selectedIdle}
+        dayKey={day.dayKey}
+        dayAnchor={dayStartTs(day.dayKey, settings.dayStartHour) + 8 * 3600_000}
+        projects={app.projects}
+        onApply={(request) => {
+          void app.recategorize(request)
+          setSelected(null)
+        }}
+        onEdit={async (edit) => {
+          const result = await app.editSession(edit)
+          if (result.ok) {
+            setSelected(null)
+            setSelectedIdle(null)
+          }
+          return result
+        }}
+      />
+    </div>
+  )
 
   return (
     <>
@@ -54,8 +95,14 @@ export function TodayView({ app }: { app: OpenTimeState }) {
             {isToday ? 'Today' : longDate(dayStartTs(day.dayKey, settings.dayStartHour))}
           </h1>
           <p className="page-sub">
-            {longDate(dayStartTs(day.dayKey, settings.dayStartHour))}
-            <span className="sep">·</span>
+            {/* On a past day the title already is the date; repeating it here
+                would say the same thing twice in adjacent lines. */}
+            {isToday ? (
+              <>
+                {longDate(dayStartTs(day.dayKey, settings.dayStartHour))}
+                <span className="sep">·</span>
+              </>
+            ) : null}
             {duration(summary.totalSeconds)} tracked
             <span className="sep">·</span>
             {summary.switches} context switches
@@ -63,6 +110,13 @@ export function TodayView({ app }: { app: OpenTimeState }) {
         </div>
         <div className="row">
           {app.status?.demo ? <span className="pill info">Demo capture</span> : null}
+          {/* Reviewing a past day happens on this tab, so without this the only
+              way back to today is a detour through the weekly chart. */}
+          {!isToday ? (
+            <button className="btn ghost" onClick={() => app.selectDay(todayKey)}>
+              Back to today
+            </button>
+          ) : null}
           <RefreshButton onRefresh={() => void app.refresh()} />
         </div>
       </div>
@@ -178,19 +232,28 @@ export function TodayView({ app }: { app: OpenTimeState }) {
           </div>
 
           <div className="grid" style={{ gap: 14, alignContent: 'start' }}>
+            {/* With a block selected, the review panel moves to the top of
+                this column so the editor sits beside the timeline being
+                edited; unselected, it waits at the bottom as an affordance
+                rather than claiming the dashboard's best slot with an empty
+                state. Keys keep the moved card's identity stable. */}
+            {hasSelection ? reviewCard : null}
+
             <InsightsCard
+              key="insights"
               today={summary}
               sessions={day.sessions}
               week={weekSummaries}
               dayStartHour={settings.dayStartHour}
             />
 
-            <div className="card">
+            <div className="card" key="balance">
               <h2 className="card-title">Day balance</h2>
               <FocusRing summary={summary} />
             </div>
 
             <GoalsCard
+              key="goals"
               goals={app.goals}
               today={summary}
               week={weekSummaries}
@@ -200,38 +263,17 @@ export function TodayView({ app }: { app: OpenTimeState }) {
               onSave={(goals) => void app.saveGoals(goals)}
             />
 
-            <div className="card">
+            <div className="card" key="categories">
               <h2 className="card-title">Categories</h2>
               <Breakdown buckets={summary.byCategory} projects={app.projects} limit={6} />
             </div>
 
-            <div className="card">
+            <div className="card" key="applications">
               <h2 className="card-title">Applications</h2>
               <Breakdown buckets={summary.byApp} projects={app.projects} limit={6} />
             </div>
 
-            <div className="card">
-              <h2 className="card-title">Review</h2>
-              <Inspector
-                session={selected}
-                idle={selectedIdle}
-                dayKey={day.dayKey}
-                dayAnchor={dayStartTs(day.dayKey, settings.dayStartHour) + 8 * 3600_000}
-                projects={app.projects}
-                onApply={(request) => {
-                  void app.recategorize(request)
-                  setSelected(null)
-                }}
-                onEdit={async (edit) => {
-                  const result = await app.editSession(edit)
-                  if (result.ok) {
-                    setSelected(null)
-                    setSelectedIdle(null)
-                  }
-                  return result
-                }}
-              />
-            </div>
+            {!hasSelection ? reviewCard : null}
           </div>
         </div>
       </div>

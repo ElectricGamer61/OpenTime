@@ -134,6 +134,11 @@ export const Timeline = memo(function Timeline({
             b.kind === 'idle' ? '#3a465a' : productivityColor(b.productivity)
           const session = b.kind === 'session' ? sessions.find((s) => s.id === b.id) : null
           const block = b.kind === 'idle' ? idle.find((i) => i.startTime === b.start) : null
+          const describe = `${b.label} · ${duration(b.durationSeconds)} · ${timeOfDay(b.start)}–${timeOfDay(b.end)}`
+          const select = () => {
+            onSelect(session ?? null)
+            onSelectIdle?.(block ?? null)
+          }
           return (
             <div
               key={b.id}
@@ -146,11 +151,16 @@ export const Timeline = memo(function Timeline({
                 background: b.kind === 'idle' ? undefined : blockFill(projectColorFor(b.label)),
                 borderLeftColor: accent,
               }}
-              onClick={() => {
-                onSelect(session ?? null)
-                onSelectIdle?.(block ?? null)
+              role="button"
+              tabIndex={0}
+              aria-label={describe}
+              onClick={select}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault() // Space must activate, not scroll the page.
+                select()
               }}
-              title={`${b.label} · ${duration(b.durationSeconds)} · ${timeOfDay(b.start)}–${timeOfDay(b.end)}`}
+              title={describe}
             >
               {height >= TINY_PX ? <div className="block-label">{b.label}</div> : null}
               {height >= COMPACT_PX ? (
@@ -171,19 +181,27 @@ export const Timeline = memo(function Timeline({
               Nothing scheduled.
             </div>
           ) : (
-            positionedEvents.map(({ event, offset, size }) => (
-              <div
-                key={event.id}
-                className="event"
-                style={{ top: offset * TRACK_HEIGHT, height: Math.max(18, size * TRACK_HEIGHT) }}
-                title={`${event.title} · ${timeOfDay(event.start)}–${timeOfDay(event.end)}`}
-              >
-                <div className="event-title">{event.title}</div>
-                <div className="event-time">
-                  {timeOfDay(event.start)} – {timeOfDay(event.end)}
+            positionedEvents.map(({ event, offset, size }) => {
+              const height = Math.max(18, size * TRACK_HEIGHT)
+              return (
+                <div
+                  key={event.id}
+                  className="event"
+                  style={{ top: offset * TRACK_HEIGHT, height }}
+                  title={`${event.title} · ${timeOfDay(event.start)}–${timeOfDay(event.end)}`}
+                >
+                  <div className="event-title">{event.title}</div>
+                  {/* Same rule as session blocks: a second line that cannot fit
+                      is clipped mid-letter, which reads as a rendering bug. The
+                      hover title still carries the times. */}
+                  {height >= COMPACT_PX ? (
+                    <div className="event-time">
+                      {timeOfDay(event.start)} – {timeOfDay(event.end)}
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>

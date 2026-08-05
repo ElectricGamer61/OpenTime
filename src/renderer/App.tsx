@@ -26,6 +26,13 @@ export function App() {
   const app = useOpenTime()
   const [tab, setTab] = useState<Tab>('today')
 
+  // "Click a day to open it" has to mean it: selecting a day from the weekly
+  // view both loads that day and lands on the view that shows it.
+  const openDay = (key: string) => {
+    app.selectDay(key)
+    setTab('today')
+  }
+
   if (!app.ready) {
     return (
       <div className="app">
@@ -68,7 +75,7 @@ export function App() {
       <main className="main">
         <div className="view" key={tab}>
           {tab === 'today' ? <TodayView app={app} /> : null}
-          {tab === 'week' ? <WeekView app={app} /> : null}
+          {tab === 'week' ? <WeekView app={app} onOpenDay={openDay} /> : null}
           {tab === 'projects' ? <ProjectsView app={app} /> : null}
           {tab === 'settings' ? <SettingsView app={app} /> : null}
         </div>

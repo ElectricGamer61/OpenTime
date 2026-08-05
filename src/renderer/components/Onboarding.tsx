@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { IconInfo } from './Icons'
 import type { OpenTimeState } from '../state/useOpenTime'
 
 /**
@@ -97,7 +98,7 @@ export function Onboarding({ app }: { app: OpenTimeState }) {
 
         {app.demoDays.length ? (
           <div className="notice">
-            <span>ⓘ</span>
+            <IconInfo />
             <div>
               Because capture is unavailable here, {app.demoDays.length} days of{' '}
               <strong>generated example history</strong> were added so the dashboard is not blank.
