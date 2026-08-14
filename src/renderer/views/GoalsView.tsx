@@ -12,7 +12,7 @@ import type { OpenTimeState } from '../state/useOpenTime'
  * editor is the point: a target you cannot adjust where you read it is a target
  * that goes stale, and a stale target is worse than none.
  */
-export function GoalsView({ app }: { app: OpenTimeState }) {
+export function GoalsView({ app, onOpenDay }: { app: OpenTimeState; onOpenDay(): void }) {
   const day = app.day
   const settings = app.settings
 
@@ -63,32 +63,43 @@ export function GoalsView({ app }: { app: OpenTimeState }) {
         />
 
         <div className="goals-side">
-        <div className="card">
-          <h2 className="card-title">
-            The week a target is set against
-            <span className="hint">Click a day to open it</span>
-          </h2>
-          {/* A goal is a claim about a normal week, so the week has to be on
-              the same screen — otherwise the number gets picked out of the air
-              and then quietly ignored. */}
-          <WeekChart
-            days={weekSummaries}
-            selected={day.dayKey}
-            dayStartHour={settings.dayStartHour}
-            onSelect={(key) => app.selectDay(key)}
-          />
-        </div>
+          <div className="card">
+            <h2 className="card-title">
+              The week a target is set against
+              {/* Short form on purpose: this column is half the width of the
+                  one Reports uses, and the long form wrapped the whole
+                  header onto two lines. */}
+              <span className="hint">Click a day to open it</span>
+            </h2>
+            {/* A goal is a claim about a normal week, so the week has to be on
+                the same screen — otherwise the number gets picked out of the
+                air and then quietly ignored. */}
+            <WeekChart
+              days={weekSummaries}
+              selected={day.dayKey}
+              dayStartHour={settings.dayStartHour}
+              /* Selecting without navigating is what the dashboard and reports
+                 charts avoid: the day silently changes underneath a view that
+                 does not show days, so the promise in the hint above goes
+                 unkept and the click reads as broken. */
+              onSelect={(key) => {
+                app.selectDay(key)
+                onOpenDay()
+              }}
+            />
+          </div>
 
-        <div className="card">
-          <h2 className="card-title">Why there are no streaks</h2>
-          <p className="prose">
-            A goal here is a floor or a ceiling on a slice of time, paced against how much of the
-            window has actually elapsed — so a weekly target is never reported as “behind” on a
-            Monday morning by construction. There is nothing to break, nothing to lose, and both
-            starter goals ship switched off. Goals that arrive pre-enabled are goals somebody else
-            set for you, and the first thing anyone does with those is stop believing the number.
-          </p>
-        </div>
+          <div className="card">
+            <h2 className="card-title">Why there are no streaks</h2>
+            <p className="prose">
+              A goal here is a floor or a ceiling on a slice of time, paced against how much of the
+              window has actually elapsed — so a weekly target is never reported as “behind” on a
+              Monday morning by construction. There is nothing to break, nothing to lose, and both
+              starter goals ship switched off. Goals that arrive pre-enabled are goals somebody
+              else set for you, and the first thing anyone does with those is stop believing the
+              number.
+            </p>
+          </div>
         </div>
       </div>
     </>

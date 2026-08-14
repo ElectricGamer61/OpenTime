@@ -4,7 +4,7 @@ import { summarizeDay, summarizeWeek } from '../../core/aggregate'
 import type { CategoryRule, Project } from '../../core/types'
 import { Breakdown } from '../components/Charts'
 import { Empty } from '../components/Empty'
-import { IconEmptyRule } from '../components/Icons'
+import { IconClose, IconEmptyRule } from '../components/Icons'
 import { duration } from '../lib/format'
 import { CATEGORY_PALETTE } from '../lib/palette'
 import type { OpenTimeState } from '../state/useOpenTime'
@@ -101,8 +101,13 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
                 />
                 <div className="row" style={{ gap: 6 }}>
                   <span className="pill mono">{duration(secondsByCategory.get(p.name) || 0)}</span>
-                  <button className="btn ghost danger" onClick={() => remove(p.id)} title="Delete">
-                    ✕
+                  <button
+                    className="icon-btn danger"
+                    onClick={() => remove(p.id)}
+                    title={`Delete ${p.name}`}
+                    aria-label={`Delete ${p.name}`}
+                  >
+                    <IconClose size={14} />
                   </button>
                 </div>
               </div>

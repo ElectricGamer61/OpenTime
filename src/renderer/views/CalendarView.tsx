@@ -248,7 +248,14 @@ export function CalendarView({
                 <button
                   key={range.id}
                   className={range.id === 'day' ? 'on' : ''}
-                  title={`${range.label} view`}
+                  /* The wider ranges leave the calendar entirely, so the
+                     tooltip says so — "Week view" promised a week on this grid
+                     and then moved the whole view out from under the click. */
+                  title={
+                    range.id === 'day'
+                      ? 'The day on this grid'
+                      : `Open the ${range.label.toLowerCase()} in Reports`
+                  }
                   /* Day is already here; everything wider is Reports. */
                   onClick={
                     range.id === 'day'

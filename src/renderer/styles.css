@@ -66,17 +66,20 @@
   --idle: light-dark(#e6e9f0, #1f1f23);
   --meeting: light-dark(#7150d0, #8b7bd8);
 
-  /* Amber. Only ever a caution — a paused tracker, a goal running behind. */
-  --warn: light-dark(#a76c11, var(--warn));
+  /* Amber. Only ever a caution — a paused tracker, a goal running behind.
+     A custom property whose own value references itself is invalid at
+     computed-value time in *both* branches of `light-dark()`, so every one of
+     these needs a real second colour rather than a placeholder. */
+  --warn: light-dark(#a76c11, #e3a136);
 
   --productive-wash: light-dark(rgba(18, 160, 93, 0.1), rgba(62, 207, 110, 0.13));
   --distracting-wash: light-dark(rgba(217, 58, 74, 0.09), rgba(242, 84, 91, 0.13));
-  --warn-wash: light-dark(rgba(167, 108, 17, 0.1), var(--warn-wash));
+  --warn-wash: light-dark(rgba(167, 108, 17, 0.1), rgba(227, 161, 54, 0.13));
 
   /* Behind a modal. Light dims with a cool grey rather than black, which on
      paper reads as a smudge on the lens rather than as dimmed content. */
   --scrim: light-dark(rgba(28, 32, 45, 0.4), rgba(6, 6, 8, 0.62));
-  --scrim-strong: light-dark(rgba(28, 32, 45, 0.52), var(--scrim-strong));
+  --scrim-strong: light-dark(rgba(28, 32, 45, 0.52), rgba(6, 6, 8, 0.74));
 
   /* Spacing scale — every gap comes from here so the vertical rhythm stays
      consistent across views. */
@@ -997,10 +1000,28 @@ select option {
   color: var(--productive);
 }
 
+/* Amber, not red. Every site that reaches for this pill is a caution — a goal
+   behind its pace, a capture adapter running limited, settings not yet saved —
+   and none of them is the same kind of thing as distracting time, which owns
+   the red. It was red only because `--warn` resolved to nothing. */
 .pill.warn {
+  background: var(--warn-wash);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+  color: var(--warn);
+}
+
+/* Red is for the one state that really is the bad one — a ceiling goal blown
+   past — and for nothing that is merely a caution. */
+.pill.danger {
   background: var(--distracting-wash);
   border-color: color-mix(in srgb, var(--distracting) 26%, transparent);
   color: var(--distracting);
+}
+
+/* A statement of fact rather than a status: generated capture is working as
+   designed, so its pill recedes instead of colouring. */
+.pill.muted {
+  color: var(--text-dim);
 }
 
 .pill.info {
@@ -2269,10 +2290,38 @@ select option {
   }
 }
 
+/*
+ * Stacked, the two panes stop being columns and become one scrolling page.
+ *
+ * Side by side each pane scrolls itself inside a fixed-height shell. Stacked,
+ * that same shell height was still being split between them, so the day
+ * collapsed to a ~90px sliver — one hour label — above a full-height summary
+ * panel, and the view stopped being a calendar at all. Rows have to size to
+ * their content and the *outer* element has to be the scroller.
+ */
 @media (max-width: 980px) {
   .calendar {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: start;
     overflow-y: auto;
+  }
+  .calendar-main {
+    /* A floor, so a mostly-empty day still shows enough hours to read as one,
+       and no ceiling, so a full day is not put inside a second scroller. */
+    grid-template-rows: auto auto auto minmax(440px, auto);
+  }
+  /* `min-height: 0` is what lets each pane scroll inside the shell when they
+     are columns — and it is exactly what collapsed them here, because a grid
+     item with an automatic minimum of 0 contributes nothing to its row. Both
+     panes have to size to their content once the page is the scroller. */
+  .calendar-main,
+  .summary {
+    min-height: auto;
+  }
+  .grid-scroll,
+  .summary {
+    overflow-y: visible;
   }
   .summary {
     border-left: none;
@@ -2632,9 +2681,14 @@ select option {
   display: flex;
 }
 
+/* `flex: 1` here, not `1 1 auto`, cut every segment to the same width whatever
+   its label — so "Just this block" in the correction drawer ellipsised to
+   "Just this blo…" while "Whole app" beside it sat in visible slack. Sizing
+   from the content and sharing only the *leftover* keeps them even-looking
+   without truncating the longest one. */
 .seg.grow button,
 .summary-seg button {
-  flex: 1;
+  flex: 1 1 auto;
   text-align: center;
   min-width: 0;
   overflow: hidden;
@@ -2726,8 +2780,35 @@ select option {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+/* A free-text value is not a menu of five options: 210px is fine for a select
+   and hopeless for a Google OAuth client ID, which arrived showing
+   "…apps.googleusercontent" and nothing else. Text rows get a column sized to
+   the value they actually hold, and give the description the remainder. */
+.setting-row.text {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+}
+
+/* The control wrapper is `justify-self: end`, so it shrinks to the input's
+   intrinsic ~200px and the widened column does nothing. Text rows stretch it
+   and let the input fill it. */
+.setting-row.text > :last-child {
+  justify-self: stretch;
+}
+
+.setting-row.text input {
+  width: 100%;
+}
+
 .setting-row > :last-child {
   justify-self: end;
+}
+
+/* A ghost button has no border, so its label sits one padding-width inside the
+   edge that every select, input and bordered button in the column lines up
+   against — a ragged right margin down the whole card. Pulling it back by that
+   padding puts the text on the same rail. */
+.setting-row .btn.ghost {
+  margin-right: -11px;
 }
 
 .setting-row + .setting-row {
@@ -2799,7 +2880,11 @@ select option {
   border-color: var(--surface-4);
 }
 
+/* The dismiss control carries an inline SVG like every other icon in the app,
+   so it needs to sit on the text baseline as a box rather than as a glyph. */
 .chip button {
+  display: inline-flex;
+  align-items: center;
   color: var(--text-faint);
   line-height: 1;
   transition: color var(--fast) var(--ease);
@@ -2809,12 +2894,20 @@ select option {
   color: var(--distracting);
 }
 
+/* The trailing column is a fixed width, not `auto`. Sized to its content it
+   was as wide as that row's duration pill — so "20h 25m" and "52m" pushed the
+   two inputs to different widths on every row and the name column arrived at
+   seven different right edges down one card. */
 .project-row {
   display: grid;
-  grid-template-columns: 22px minmax(120px, 1fr) minmax(0, 2fr) auto;
+  grid-template-columns: 22px minmax(120px, 1fr) minmax(0, 2fr) 120px;
   gap: var(--gap-2);
   align-items: center;
   padding: 10px 0;
+}
+
+.project-row > :last-child {
+  justify-content: flex-end;
 }
 
 .project-row + .project-row {
@@ -2870,17 +2963,6 @@ select option {
 }
 
 /* ── Insights, goals, corrections, onboarding ───────────────────────────── */
-
-/* Rows whose control is a group of buttons need their natural width, not the
-   fixed control column — otherwise three export buttons stack into three
-   lines. */
-.setting-row.wide {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.setting-row > :last-child {
-  justify-self: end;
-}
 
 .card-note {
   margin: -6px 0 var(--gap-3);

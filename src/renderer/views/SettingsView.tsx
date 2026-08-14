@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import type { Settings } from '../../core/types'
 import { DataSettings } from '../components/DataSettings'
-import { IconInfo } from '../components/Icons'
+import { IconClose, IconInfo } from '../components/Icons'
 import type { OpenTimeState } from '../state/useOpenTime'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange(v: boolean): void; label: string }) {
@@ -23,16 +23,19 @@ function Row({
   name,
   desc,
   wide,
+  text,
   children,
 }: {
   name: string
   desc: string
   /** Let the control keep its natural width — for groups of buttons. */
   wide?: boolean
+  /** Widen the control column — for a free-text value the reader has to read. */
+  text?: boolean
   children: React.ReactNode
 }) {
   return (
-    <div className={`setting-row${wide ? ' wide' : ''}`}>
+    <div className={`setting-row${wide ? ' wide' : ''}${text ? ' text' : ''}`}>
       <div>
         <div className="setting-name">{name}</div>
         <div className="setting-desc">{desc}</div>
@@ -301,11 +304,12 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
                   {a}
                   <button
                     aria-label={`Stop ignoring ${a}`}
+                    title={`Stop ignoring ${a}`}
                     onClick={() =>
                       patch({ ignoredApps: draft.ignoredApps.filter((x) => x !== a) })
                     }
                   >
-                    ✕
+                    <IconClose size={12} />
                   </button>
                 </span>
               ))
@@ -364,13 +368,14 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
                   {k}
                   <button
                     aria-label={`Stop ignoring ${k}`}
+                    title={`Stop ignoring ${k}`}
                     onClick={() =>
                       patch({
                         ignoredTitleKeywords: draft.ignoredTitleKeywords.filter((x) => x !== k),
                       })
                     }
                   >
-                    ✕
+                    <IconClose size={12} />
                   </button>
                 </span>
               ))
@@ -454,7 +459,7 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
             </div>
           </Row>
 
-          <Row name="OAuth client ID" desc="From your own Google Cloud project.">
+          <Row text name="OAuth client ID" desc="From your own Google Cloud project.">
             <input
               value={draft.calendar.clientId}
               placeholder="…apps.googleusercontent.com"
@@ -464,9 +469,10 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
             />
           </Row>
 
-          <Row name="OAuth client secret" desc="Stored locally only.">
+          <Row text name="OAuth client secret" desc="Stored locally only.">
             <input
               type="password"
+              placeholder="Paste the client secret"
               value={draft.calendar.clientSecret}
               onChange={(e) =>
                 patch({ calendar: { ...draft.calendar, clientSecret: e.target.value.trim() } })

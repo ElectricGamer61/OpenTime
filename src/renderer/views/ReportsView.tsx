@@ -212,6 +212,10 @@ export function ReportsView({
                   ? `${percent(totals.distractingSeconds / totals.totalSeconds)} of tracked time`
                   : 'Nothing yet'
               }
+              /* The same tile on the dashboard draws its share; this one did
+                 not, so the identical card read differently in the two places
+                 it appears. */
+              meter={totals.totalSeconds ? totals.distractingSeconds / totals.totalSeconds : 0}
               color="var(--distracting)"
             />
             <Stat
