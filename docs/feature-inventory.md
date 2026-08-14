@@ -56,17 +56,38 @@ waiting out the heartbeat.
 Away time is recorded as an explicit block, and (see §7) can be claimed back as
 work after the fact.
 
-## 3. Timeline
+## 3. Day calendar
 
 | | |
 |---|---|
 | Status | **Shipped** |
-| Where | `src/renderer/components/Timeline.tsx`, `src/core/aggregate.ts` |
+| Where | `src/renderer/components/DayGrid.tsx`, `src/renderer/lib/entries.ts` |
 
-A vertical day timeline with the calendar overlaid beside it. Geometry is
-precomputed as fractions by `buildTimeline`, so rendering is a multiply — no
-layout measurement, no resize observers. Sessions *and* away blocks are
+An hour grid with a column per kind of work, a rounded block per entry, and a
+detail card behind a click. Geometry is a multiply from the hour scale — no
+layout measurement, no resize observers. Sessions, away blocks *and* calendar
+events are all drawn as entries, and sessions and away blocks are both
 selectable, because both are correctable.
+
+Two things are worth naming:
+
+- **Entries are folded, numbers are not.** Adjacent sessions in the same group
+  fold into one block so a morning of real work is a handful of readable blocks
+  rather than fifty slivers. Only *adjacent* sessions fold — an intervening
+  category ends the run, because merging across it would claim the minutes in
+  between — and an entry's duration is the sum of its sessions, never
+  end-minus-start. The block spans the sub-gaps; the number does not.
+- **Columns are labels, not collisions.** Sessions never overlap in time, so
+  collision packing would produce a single column and lose the thing a grid is
+  for. Columns are the groups the day is made of, ordered by time spent, with
+  the smallest sharing the last column — safe precisely because they cannot
+  overlap. The grouping (category / project / app) is a tab above the grid and
+  drives the summary column's donut at the same time.
+
+**Not modelled:** a per-entry billable amount. There are no rates and no clients
+in the data model (§5 — projects are the closest concept), so the slot a
+commercial tracker puts money in is simply absent rather than filled with a
+plausible number.
 
 ## 4. Categorisation and rules
 
@@ -171,14 +192,30 @@ already selectable in Settings for it.
 
 | | |
 |---|---|
-| Status | **Partial** |
-| Where | `src/core/aggregate.ts`, `src/core/export.ts` |
+| Status | **Shipped** |
+| Where | `src/core/range.ts`, `src/renderer/views/ReportsView.tsx` |
 
-Today and a trailing week are built. Export now offers a range (all time / 7 /
-30 / 90 days) and states how many stored days actually fall inside it — until
-this pass the UI passed no range at all, so every export was the whole history
-whatever was asked for. There is still no month or custom-range **view**; that
-is the largest remaining UI gap.
+Day, week, month, quarter, year, and any two dates you pick. The range
+arithmetic is pure and separate from the view (`src/core/range.ts`), which is
+what makes it testable: a month is a *calendar* month including a leap February,
+stepping back from March lands on February rather than thirty days ago, and a
+custom range slides by its own length so "previous" means something.
+
+Three decisions worth naming:
+
+- **A week stays the trailing seven days**, not Monday-to-Sunday, because that
+  is what the rest of the app already means by "this week". Two different weeks
+  in one product is a bug people report as bad data.
+- **The chart changes with the range rather than being stretched.** Up to about
+  six weeks gets a column per day; a month also gets a real calendar grid,
+  because that is how people hold a month in their head; a year gets a cell per
+  day in week columns. A 365-column bar chart can be neither read nor clicked.
+- **The daily average is over *active* days.** A month whose average is dragged
+  down by twelve untracked weekend days is telling you about the calendar rather
+  than about the work.
+
+The custom range is clamped to two years, so a slipped keystroke in a year field
+cannot ask the store for four thousand day files.
 
 ## 10. Goals
 
@@ -313,7 +350,55 @@ off for an honest empty dashboard instead; every synthetic row carries
 `source: 'demo'` and says so in the UI and in exports; and "Remove demo data"
 deletes exactly the seeded days plus any demo-adapter rows sitting in real days.
 
-## 18. Tray and timed pause
+## 18. Focus sessions
+
+| | |
+|---|---|
+| Status | **Shipped** |
+| Where | `src/core/focus.ts`, `src/renderer/components/Focus.tsx`, `src/renderer/lib/ambient.ts` |
+
+Everything else in OpenTime observes. This is the one place the user *declares*:
+name the work, choose a length, optionally choose an ambient bed, and get a dock
+with a countdown, an extend button and a stop button.
+
+The design decision that matters is that **a focus session is not a second kind
+of record.** Capture keeps sampling throughout, unchanged. Ending the session
+seals it over the day it ran in: rows already recorded inside the window are
+stamped with the session's id and goal, rows straddling an edge are split at the
+edge so the minutes before you started are not claimed, and only the minutes
+nothing was observed for are filled in. The consequences are the point — the
+session draws as one block on the timeline, the block still opens to show which
+apps it really went in, and no minute is counted twice.
+
+Three details:
+
+- **Splitting is skipped when it would leave a piece too short to be a session.**
+  Those rows go whole to whichever side holds most of them: a two-second boundary
+  error is better than a two-second orphan row in someone's history.
+- **The running session lives in the main process, not the renderer.** The
+  renderer only ever displays `status.focus`, so reloading the window cannot lose
+  a session or drift its timer. It is deliberately *not* persisted to disk — a
+  crash loses the label and none of the time, whereas persisting it would mean
+  deciding at the next boot how long a session nobody ended is supposed to have
+  run.
+- **Starting a session resumes a paused tracker.** A focus session against a
+  paused engine would record nothing and hand back an empty block forty-five
+  minutes later.
+
+**Ambient sound is synthesised, never bundled or streamed.** Five beds built at
+runtime from filtered noise through the Web Audio API. No audio files (the
+renderer's CSP allows no external sources), no licensing question, and no
+network. Filtered noise is also the honest version of what these are for:
+something with no detail for attention to land on.
+
+**Not modelled:** distraction blocking. Blocking sites or apps means either a
+system-level network hook or an accessibility-driven window killer, both of which
+are a much larger promise about what this app is allowed to do to your machine
+than "it reads which window has focus". Post-session self-rating is also absent —
+it exists in this product class to train a focus-detection model, and OpenTime
+sends nothing anywhere to train anything.
+
+## 19. Tray and timed pause
 
 | | |
 |---|---|
@@ -330,7 +415,6 @@ forgetting to start it again and losing the afternoon.
 
 | Item | Why it is not built |
 |---|---|
-| **Month / custom-range view** | Storage and export already support it; only the view is missing. Largest remaining gap. |
 | **SQLite backend** | The sharded store fixed the durability and memory problems SQLite was wanted for. It would now buy indexed cross-day queries — worth doing when a reporting view needs them, not before. |
 | **Auto-update** | Natural choice is `electron-updater` against public GitHub Releases. Shipping an update feed only the author can publish to is worse than shipping none. |
 | **Codesigning and notarisation** | Required before macOS distribution; needs an Apple Developer ID. |
@@ -349,6 +433,8 @@ forgetting to start it again and losing the afternoon.
 | **Accounts, cloud sync, subscription** | The data is on your machine and stays there. Sync is a legitimate feature request, but it should arrive as "point it at your own folder", not as an account. |
 | **Streaks and badges** | See §10. Gamification survives about two weeks and then costs credibility permanently. |
 | **AI-generated day summaries** | Would mean sending activity metadata to a model provider, which contradicts §12 outright. |
+| **Distraction blocking during a focus session** | See §18. Blocking sites or apps needs either a system-level network hook or an accessibility-driven window killer — a far larger promise about what this app may do to your machine than "it reads which window has focus". |
+| **Post-session focus self-rating** | Exists in this product class to train a focus-detection model. OpenTime sends nothing anywhere, so the rating would train nothing and would only be a question asked at the end of every session. |
 
 ## Candidates for removal or rework
 
@@ -357,4 +443,4 @@ forgetting to start it again and losing the afternoon.
 | **Focus checkpoint notification** | Weakest shipped feature. A fixed-interval nudge does not know whether you are mid-thought. Keep the mechanism, but it should key off an actual break in the pattern rather than a timer, or come out. |
 | **Demo capture adapter** | Right for reviewability and for machines where capture cannot run; wrong if it ever becomes the path of least resistance for a real user. Now gated hard (§17) — watch that the gate stays. |
 | **`Uncategorized` as a category** | Honest, but a dashboard whose largest slice is "Uncategorized" is a dashboard nobody acts on. Wants a prompt that turns it into rules, not a bigger keyword table. |
-| **Seven-day-only history** | The trailing week is a reasonable default focus, but the app now stores years and shows one week of it. Should follow the range view. |
+| **Seven-day-only dashboard** | Reports now cover any range (§9), but the dashboard and the summary column are still fixed to today and the trailing week. That is a reasonable default focus, not a limit worth keeping by accident. |

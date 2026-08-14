@@ -23,6 +23,7 @@ import {
   splitSession,
 } from '../../core/edits'
 import { dayContains, dayEndTs, dayStartTs } from '../../core/day'
+import { sealFocus } from '../../core/focus'
 import type { DayRecord, Session } from '../../core/types'
 import type { SessionEdit } from '../../shared/ipc'
 import type { Storage } from '../storage/Storage'
@@ -128,6 +129,11 @@ export async function applyEdit(
           }
         }
         await storage.putSessions(key, applySessionEdit(sessions, { add: [created] }))
+        break
+      }
+      case 'seal-focus': {
+        const sealed = sealFocus(sessions, edit.focus, edit.endTime)
+        await storage.putSessions(key, sealed.sessions)
         break
       }
       case 'claim-idle': {

@@ -24,9 +24,12 @@ const THEMES = themeArg === 'both' ? ['light', 'dark'] : [themeArg || 'dark']
 
 /** Tab label to click, and the filename README already links to. */
 const TABS = [
-  { tab: 'Today', file: 'today.png' },
-  { tab: 'This week', file: 'week.png' },
-  { tab: 'Projects & rules', file: 'projects.png' },
+  { tab: 'Calendar', file: 'calendar.png' },
+  { tab: 'Dashboard', file: 'dashboard.png' },
+  { tab: 'Activity', file: 'activity.png' },
+  { tab: 'Reports', file: 'reports.png' },
+  { tab: 'Projects', file: 'projects.png' },
+  { tab: 'Goals', file: 'goals.png' },
   { tab: 'Settings', file: 'settings.png' },
 ]
 
@@ -40,7 +43,7 @@ const win = new BrowserWindow({
   width: 1440,
   height: 950,
   show: false,
-  backgroundColor: '#0b0e14',
+  backgroundColor: '#0d0d0f',
   // No preload on purpose: without the IPC bridge the renderer falls back to
   // its self-contained demo client, so this captures the full UI without
   // needing the tracking engine running behind it.
@@ -120,6 +123,17 @@ for (const { tab, file: rawName } of TABS) {
     `document.querySelector('.nav-item.active')?.textContent.trim() ?? null`
   )
   if (active !== tab) throw new Error(`clicked "${tab}" but "${active}" is active`)
+
+  // `invalidate()` alone still left the *previous* tab's active pill in the
+  // raster — the rail is outside the region the switch dirtied, and repainting
+  // is not the same as re-rastering. A one-pixel resize and back forces a full
+  // raster and is the only thing that reliably fixed it.
+  const [w, h] = win.getSize()
+  win.setSize(w, h - 1)
+  await new Promise((r) => setTimeout(r, 150))
+  win.setSize(w, h)
+  await new Promise((r) => setTimeout(r, 350))
+
   const image = await win.webContents.capturePage()
   const file = path.join(outDir, name)
   await fs.writeFile(file, image.toPNG())

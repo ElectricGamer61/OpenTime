@@ -28,7 +28,9 @@ import { dayKey, lastNDayKeys, parseYmdLocal, formatYmdLocal } from '../core/day
 import { generateDemoDay } from '../core/demo'
 import { exportFilename, parseBackup } from '../core/export'
 import { sanitizeGoal } from '../core/goals'
+import { focusOutcome, sealFocus, startFocus, type FocusStartInput } from '../core/focus'
 import type {
+  ActiveFocus,
   CalendarEvent,
   CategoryRule,
   Goal,
@@ -46,6 +48,8 @@ import type {
   EditResult,
   ExportRequest,
   ExportResult,
+  FocusEndResult,
+  FocusStartResult,
   RecategorizeRequest,
   SessionEdit,
 } from '../shared/ipc'
@@ -75,6 +79,15 @@ let tracker: Tracker
 let capture: Capture
 let captureHealth: CaptureHealth
 let tokens: TokenSet | null = null
+/**
+ * The focus session running right now.
+ *
+ * Deliberately memory-only. A focus session is a label over minutes the tracker
+ * is recording anyway, so losing it to a crash loses the label and none of the
+ * time — whereas persisting it would mean deciding, at the next boot, how long
+ * a session nobody ended is supposed to have run.
+ */
+let activeFocus: ActiveFocus | null = null
 
 const tokenFile = () => path.join(app.getPath('userData'), 'opentime-google-tokens.json')
 
@@ -87,9 +100,31 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    backgroundColor: '#0d1117',
+    // Must match `--bg` in the renderer, or the window paints a different dark
+    // for the frame or two before the first render lands.
+    backgroundColor: '#0d0d0f',
     title: 'OpenTime',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // The renderer draws its own title bar, so the native one is hidden and the
+    // platform's window controls are inset into it. Linux is the exception:
+    // hiding the frame there removes the controls outright rather than
+    // relocating them, and a window you cannot close is not a trade worth
+    // making for a strip of chrome.
+    titleBarStyle:
+      process.platform === 'darwin'
+        ? 'hiddenInset'
+        : process.platform === 'win32'
+          ? 'hidden'
+          : 'default',
+    ...(process.platform === 'win32'
+      ? {
+          titleBarOverlay: {
+            color: '#0d0d0f',
+            symbolColor: '#8a8a92',
+            // Matches `--titlebar` in styles.css.
+            height: 44,
+          },
+        }
+      : {}),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
@@ -156,6 +191,15 @@ function buildTrayMenu(): void {
     Menu.buildFromTemplate([
       { label: 'Open OpenTime', click: showWindow },
       { type: 'separator' },
+      // Only present while one is running: a permanently-disabled "End focus
+      // session" row would be a menu that mostly says no.
+      ...(activeFocus
+        ? [
+            { label: `Focus: ${activeFocus.label}`, enabled: false },
+            { label: 'End focus session', click: () => void endFocusSession() },
+            { type: 'separator' as const },
+          ]
+        : []),
       status.paused
         ? { label: 'Resume tracking', click: () => { tracker.resume(); buildTrayMenu() } }
         : {
@@ -193,6 +237,17 @@ async function dayPayload(key: string): Promise<DayPayload> {
 
 function todayKey(): string {
   return dayKey(Date.now(), storage.getSettings().dayStartHour)
+}
+
+/**
+ * The tracker's status plus whatever the focus controller is doing.
+ *
+ * Focus is not the tracker's business — the engine samples identically whether
+ * or not a session is running — but the renderer wants both on one push, so it
+ * is stitched on here rather than threaded through `Tracker`.
+ */
+function statusNow(): TrackerStatus {
+  return { ...tracker.status, focus: activeFocus }
 }
 
 /**
@@ -517,6 +572,55 @@ async function importBackup(): Promise<ExportResult> {
   return { ok: true, message: `Restored ${dayCount} day(s) from the backup.`, count: dayCount }
 }
 
+/**
+ * End the running focus session and write it into the day it ran in.
+ *
+ * A plain function rather than only an IPC handler because the tray ends
+ * sessions too, and a tray item that reached in through `ipcMain` would be a
+ * second, untested path over the same history.
+ */
+async function endFocusSession(): Promise<FocusEndResult> {
+  const focus = activeFocus
+  if (!focus) return { ok: false, message: 'No focus session is running.', status: statusNow() }
+
+  // Flush first: the minutes just worked are still inside the tracker's open
+  // session, and sealing before they reach the store would claim nothing.
+  await tracker.flushOpenSession()
+
+  const key = dayKey(focus.startTime, storage.getSettings().dayStartHour)
+  const endTime = Date.now()
+  activeFocus = null
+  buildTrayMenu()
+
+  try {
+    const sealed = sealFocus(await storage.getSessions(key), focus, endTime)
+    await storage.putSessions(key, sealed.sessions)
+    const status = statusNow()
+    broadcast(CHANNELS.statusEvent, status)
+    broadcast(CHANNELS.dataEvent)
+    return {
+      ok: true,
+      status,
+      dayKey: key,
+      outcome: focusOutcome(sealed.sessions, focus.id) ?? {
+        label: focus.label,
+        plannedSeconds: focus.plannedSeconds,
+        actualSeconds: 0,
+        apps: [],
+      },
+    }
+  } catch (err) {
+    console.error('[main] sealing the focus session failed:', err)
+    const status = statusNow()
+    broadcast(CHANNELS.statusEvent, status)
+    return {
+      ok: false,
+      message: (err as Error).message || 'That focus session could not be recorded.',
+      status,
+    }
+  }
+}
+
 // ── IPC ──────────────────────────────────────────────────────────────────────
 
 function registerIpc(): void {
@@ -528,7 +632,7 @@ function registerIpc(): void {
       projects: storage.getProjects(),
       rules: storage.getRules(),
       goals: storage.getGoals(),
-      status: tracker.status,
+      status: statusNow(),
       today: await dayPayload(key),
       weekKeys: lastNDayKeys(7, key),
       historyKeys: storage.listDayKeys(),
@@ -550,7 +654,7 @@ function registerIpc(): void {
     return out
   })
 
-  ipcMain.handle(CHANNELS.getStatus, (): TrackerStatus => tracker.status)
+  ipcMain.handle(CHANNELS.getStatus, (): TrackerStatus => statusNow())
 
   ipcMain.handle(
     CHANNELS.setTracking,
@@ -560,7 +664,7 @@ function registerIpc(): void {
       else if (action === 'resume') tracker.resume()
       else if (action === 'stop') tracker.stop()
       buildTrayMenu()
-      return tracker.status
+      return statusNow()
     }
   )
 
@@ -712,13 +816,58 @@ function registerIpc(): void {
     const health = initCapture()
     tracker.setCapture(capture)
     buildTrayMenu()
-    broadcast(CHANNELS.statusEvent, tracker.status)
+    broadcast(CHANNELS.statusEvent, statusNow())
     return health
   })
 
   ipcMain.handle(CHANNELS.completeOnboarding, async (): Promise<Settings> => {
     await storage.saveSettings({ ...storage.getSettings(), onboardedAt: Date.now() })
     return storage.getSettings()
+  })
+
+  ipcMain.handle(
+    CHANNELS.startFocus,
+    (_e, input: FocusStartInput): FocusStartResult => {
+      if (activeFocus) {
+        return { ok: false, message: 'A focus session is already running.', status: statusNow() }
+      }
+      try {
+        activeFocus = startFocus(input)
+      } catch (err) {
+        return { ok: false, message: (err as Error).message, status: statusNow() }
+      }
+      // A focus session against a paused tracker would record nothing, so
+      // starting one resumes tracking rather than quietly producing an empty
+      // block 45 minutes later.
+      if (tracker.status.paused) tracker.resume()
+      buildTrayMenu()
+      const status = statusNow()
+      broadcast(CHANNELS.statusEvent, status)
+      return { ok: true, status, focus: activeFocus }
+    }
+  )
+
+  ipcMain.handle(CHANNELS.endFocus, (): Promise<FocusEndResult> => endFocusSession())
+
+  ipcMain.handle(CHANNELS.extendFocus, (_e, minutes: number): FocusStartResult => {
+    if (!activeFocus) {
+      return { ok: false, message: 'No focus session is running.', status: statusNow() }
+    }
+    const add = Math.round(minutes)
+    if (!Number.isFinite(add) || add <= 0) {
+      return { ok: false, message: 'Extending needs a positive number of minutes.', status: statusNow() }
+    }
+    // Extending only ever moves the planned end later. A session already past
+    // its plan extends from *now*, not from a marker in the past, so one click
+    // reliably buys the minutes it says it does.
+    const elapsed = Math.max(0, Math.round((Date.now() - activeFocus.startTime) / 1000))
+    activeFocus = {
+      ...activeFocus,
+      plannedSeconds: Math.max(activeFocus.plannedSeconds, elapsed) + add * 60,
+    }
+    const status = statusNow()
+    broadcast(CHANNELS.statusEvent, status)
+    return { ok: true, status, focus: activeFocus }
   })
 }
 
@@ -748,8 +897,8 @@ if (!app.requestSingleInstanceLock()) {
         capture,
         storage,
         getIdleSeconds: () => powerMonitor.getSystemIdleTime(),
-        onChange: (status) => {
-          broadcast(CHANNELS.statusEvent, status)
+        onChange: () => {
+          broadcast(CHANNELS.statusEvent, statusNow())
           broadcast(CHANNELS.dataEvent)
         },
         onBreakSuggestion: (minutes) => {

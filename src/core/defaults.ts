@@ -40,14 +40,19 @@ export const DEFAULT_SETTINGS: Settings = {
   },
 }
 
+/**
+ * Colours are taken from `CATEGORY_PALETTE` in the renderer's palette module so
+ * a starter project and an unrecognised category are drawn from one set. They
+ * are saturated on purpose: the calendar paints them as solid block fills.
+ */
 export const DEFAULT_PROJECTS: Project[] = [
-  { id: 'p_deep_work', name: 'Deep Work', color: '#5b8cff', keywords: ['code', 'vscode', 'terminal', 'github'] },
-  { id: 'p_design', name: 'Design', color: '#38bdf8', keywords: ['figma', 'sketch', 'photoshop', 'illustrator'] },
-  { id: 'p_writing', name: 'Writing', color: '#22d3ee', keywords: ['docs.google', 'notion', 'obsidian', 'word'] },
-  { id: 'p_communication', name: 'Communication', color: '#f6b26b', keywords: ['slack', 'mail', 'gmail', 'outlook', 'teams'] },
-  { id: 'p_meetings', name: 'Meetings', color: '#c084fc', keywords: ['zoom', 'meet.google', 'teams meeting', 'webex'] },
-  { id: 'p_research', name: 'Research', color: '#34d399', keywords: ['wikipedia', 'arxiv', 'stackoverflow', 'developer.mozilla'] },
-  { id: 'p_breaks', name: 'Breaks', color: '#94a3b8', keywords: ['youtube', 'netflix', 'reddit', 'twitch'] },
+  { id: 'p_deep_work', name: 'Deep Work', color: '#7c5cff', keywords: ['code', 'vscode', 'terminal', 'github'] },
+  { id: 'p_design', name: 'Design', color: '#12b5b0', keywords: ['figma', 'sketch', 'photoshop', 'illustrator'] },
+  { id: 'p_writing', name: 'Writing', color: '#4a9eff', keywords: ['docs.google', 'notion', 'obsidian', 'word'] },
+  { id: 'p_communication', name: 'Communication', color: '#e0a83e', keywords: ['slack', 'mail', 'gmail', 'outlook', 'teams'] },
+  { id: 'p_meetings', name: 'Meetings', color: '#c86bf0', keywords: ['zoom', 'meet.google', 'teams meeting', 'webex'] },
+  { id: 'p_research', name: 'Research', color: '#3ecf6e', keywords: ['wikipedia', 'arxiv', 'stackoverflow', 'developer.mozilla'] },
+  { id: 'p_breaks', name: 'Breaks', color: '#f2545b', keywords: ['youtube', 'netflix', 'reddit', 'twitch'] },
 ]
 
 /**

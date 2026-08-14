@@ -3,7 +3,7 @@
  * with a single hand. Drawn inline as SVG so there is no binary asset and it
  * inherits the accent token.
  */
-export function BrandMark({ size = 26 }: { size?: number }) {
+export function BrandMark({ size = 22 }: { size?: number }) {
   return (
     <svg
       className="brand-mark"
@@ -30,6 +30,7 @@ export function BrandMark({ size = 26 }: { size?: number }) {
   )
 }
 
+/** Sidebar identity: the mark beside the product name. */
 export function Wordmark() {
   return (
     <div className="brand">
@@ -37,6 +38,19 @@ export function Wordmark() {
       <div className="brand-name">
         Open<span>Time</span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The title-bar wordmark — all caps, widely letterspaced, centred in the drag
+ * region. It is the app's only piece of pure chrome, so it is set well below the
+ * contrast of anything that carries information.
+ */
+export function TitleWordmark() {
+  return (
+    <div className="titlebar-mark" aria-label="OpenTime">
+      OPENTIME
     </div>
   )
 }

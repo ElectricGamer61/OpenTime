@@ -42,7 +42,26 @@ function Row({
   )
 }
 
+/**
+ * Settings sections.
+ *
+ * One section on screen at a time rather than one long column. Five stacked
+ * cards meant the page was mostly scrolling past things you were not looking
+ * for, and on a wide window it left half the view empty next to an 820px
+ * ribbon — which reads as an unfinished screen rather than a calm one.
+ */
+const SECTIONS = [
+  { id: 'tracking', label: 'Tracking' },
+  { id: 'privacy', label: 'Privacy' },
+  { id: 'data', label: 'Your data' },
+  { id: 'app', label: 'Application' },
+  { id: 'calendar', label: 'Calendar' },
+] as const
+
+type SectionId = (typeof SECTIONS)[number]['id']
+
 export function SettingsView({ app }: { app: OpenTimeState }) {
+  const [section, setSection] = useState<SectionId>('tracking')
   const [draft, setDraft] = useState<Settings | null>(app.settings)
   const [ignoreInput, setIgnoreInput] = useState('')
   const [keywordInput, setKeywordInput] = useState('')
@@ -99,7 +118,21 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
       </div>
 
       <div className="settings">
-        <div className="card">
+        <nav className="settings-nav" aria-label="Settings sections">
+          {SECTIONS.map((item) => (
+            <button
+              key={item.id}
+              className={section === item.id ? 'on' : ''}
+              aria-current={section === item.id ? 'true' : undefined}
+              onClick={() => setSection(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="settings-pane">
+        <div className="card" hidden={section !== 'tracking'}>
           <h2 className="card-title">Tracking</h2>
 
           <Row
@@ -223,7 +256,7 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
           </Row>
         </div>
 
-        <div className="card">
+        <div className="card" hidden={section !== 'privacy'}>
           <h2 className="card-title">Privacy</h2>
 
           <Row
@@ -345,9 +378,11 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
           </div>
         </div>
 
-        <DataSettings app={app} draft={draft} patch={patch} />
+        <div hidden={section !== 'data'}>
+          <DataSettings app={app} draft={draft} patch={patch} />
+        </div>
 
-        <div className="card">
+        <div className="card" hidden={section !== 'app'}>
           <h2 className="card-title">Application</h2>
           <Row
             wide
@@ -386,7 +421,7 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
           </Row>
         </div>
 
-        <div className="card">
+        <div className="card" hidden={section !== 'calendar'}>
           <h2 className="card-title">Google Calendar</h2>
           <p style={{ color: 'var(--text-dim)', fontSize: 12.5, marginTop: -6 }}>
             OpenTime ships no API credentials. Create a free OAuth client in your own Google Cloud
@@ -465,6 +500,7 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
               <div>{calendarMessage}</div>
             </div>
           ) : null}
+        </div>
         </div>
       </div>
     </>

@@ -19,6 +19,7 @@ import type {
   Settings,
   TrackerStatus,
 } from '../../core/types'
+import type { FocusStartInput } from '../../core/focus'
 import type {
   Bootstrap,
   CalendarResult,
@@ -27,6 +28,8 @@ import type {
   EditResult,
   ExportRequest,
   ExportResult,
+  FocusEndResult,
+  FocusStartResult,
   RecategorizeRequest,
   SessionEdit,
 } from '../../shared/ipc'
@@ -52,6 +55,8 @@ export interface OpenTimeState {
   firstRun: boolean
   demoDays: string[]
   selectDay(key: string): void
+  /** Read arbitrary day keys, for the reporting ranges the hook does not hold. */
+  loadRange(keys: string[]): Promise<DayPayload[]>
   refresh(): Promise<void>
   reload(): Promise<void>
   setTracking(action: 'start' | 'pause' | 'resume' | 'stop', minutes?: number): Promise<void>
@@ -71,6 +76,9 @@ export interface OpenTimeState {
   clearDemoData(): Promise<ExportResult>
   reloadCapture(): Promise<CaptureHealth>
   completeOnboarding(): Promise<void>
+  startFocus(input: FocusStartInput): Promise<FocusStartResult>
+  endFocus(): Promise<FocusEndResult>
+  extendFocus(minutes: number): Promise<FocusStartResult>
 }
 
 export function useOpenTime(): OpenTimeState {
@@ -131,6 +139,8 @@ export function useOpenTime(): OpenTimeState {
     },
     [api]
   )
+
+  const loadRange = useCallback((keys: string[]) => api.getRange(keys), [api])
 
   const refresh = useCallback(async () => {
     if (!weekKeys.length) return
@@ -261,6 +271,35 @@ export function useOpenTime(): OpenTimeState {
     return health
   }, [api, reload])
 
+  const startFocus = useCallback(
+    async (input: FocusStartInput) => {
+      const result = await api.startFocus(input)
+      setStatus(result.status)
+      return result
+    },
+    [api]
+  )
+
+  /**
+   * Ending a session writes to the day it ran in, which is not necessarily the
+   * day on screen — refresh rather than trusting the result's payload.
+   */
+  const endFocus = useCallback(async () => {
+    const result = await api.endFocus()
+    setStatus(result.status)
+    if (result.ok) await refresh()
+    return result
+  }, [api, refresh])
+
+  const extendFocus = useCallback(
+    async (minutes: number) => {
+      const result = await api.extendFocus(minutes)
+      setStatus(result.status)
+      return result
+    },
+    [api]
+  )
+
   const completeOnboarding = useCallback(async () => {
     const saved = await api.completeOnboarding()
     setBoot((prev) => (prev ? { ...prev, settings: saved, firstRun: false } : prev))
@@ -287,6 +326,7 @@ export function useOpenTime(): OpenTimeState {
       firstRun: boot?.firstRun ?? false,
       demoDays: boot?.demoDays ?? [],
       selectDay,
+      loadRange,
       refresh,
       reload,
       setTracking,
@@ -306,6 +346,9 @@ export function useOpenTime(): OpenTimeState {
       clearDemoData,
       reloadCapture,
       completeOnboarding,
+      startFocus,
+      endFocus,
+      extendFocus,
     }),
     [
       boot,
@@ -315,6 +358,7 @@ export function useOpenTime(): OpenTimeState {
       status,
       selectedDay,
       selectDay,
+      loadRange,
       refresh,
       reload,
       setTracking,
@@ -334,6 +378,9 @@ export function useOpenTime(): OpenTimeState {
       clearDemoData,
       reloadCapture,
       completeOnboarding,
+      startFocus,
+      endFocus,
+      extendFocus,
     ]
   )
 }

@@ -280,6 +280,19 @@ export class Tracker {
     await this.pending
   }
 
+  /**
+   * Close the open session now and wait for it to reach the store.
+   *
+   * Ending a focus session has to seal minutes that are still sitting in the
+   * builder; sealing against a day file that stops at the last flush would
+   * claim an empty window. Closes at the last observed sample like every other
+   * flush, so the unobserved tail is still not credited.
+   */
+  async flushOpenSession(): Promise<void> {
+    this.track(this.commit(this.builder.flush()))
+    await this.drain()
+  }
+
   /** Chain a write onto the pending queue so `drain()` can await all of them. */
   private track(work: Promise<void>): void {
     this.pending = this.pending.then(() => work).catch((err) => {

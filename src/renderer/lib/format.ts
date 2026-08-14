@@ -7,11 +7,19 @@ const FULL_FMT = new Intl.DateTimeFormat(undefined, {
   month: 'long',
   day: 'numeric',
 })
+/** The calendar header carries the year, because it can be scrolled into last year. */
+const DATED_FMT = new Intl.DateTimeFormat(undefined, {
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+})
 
 /** "3h 12m", "48m", "—" — the everyday duration format. */
 export function duration(seconds: number): string {
   if (!seconds || seconds < 1) return '—'
-  // Round to whole minutes first so 19h 59m 40s becomes 20h, never "19h 60m".
+  // Round to whole minutes *first*, then split. Splitting first and rounding
+  // the remainder lets 19h 59m 40s render as "19h 60m" — which it did.
   const totalMinutes = Math.round(seconds / 60)
   const h = Math.floor(totalMinutes / 60)
   const m = totalMinutes % 60
@@ -41,6 +49,10 @@ export function weekdayShort(ts: number): string {
 
 export function longDate(ts: number): string {
   return FULL_FMT.format(ts)
+}
+
+export function datedTitle(ts: number): string {
+  return DATED_FMT.format(ts)
 }
 
 export function percent(share: number): string {

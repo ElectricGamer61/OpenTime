@@ -6,6 +6,7 @@
  */
 
 import type {
+  ActiveFocus,
   CalendarEvent,
   CategoryRule,
   Goal,
@@ -16,6 +17,7 @@ import type {
   Settings,
   TrackerStatus,
 } from '../core/types'
+import type { FocusOutcome, FocusStartInput } from '../core/focus'
 
 export const CHANNELS = {
   getBootstrap: 'opentime:getBootstrap',
@@ -39,6 +41,9 @@ export const CHANNELS = {
   clearDemoData: 'opentime:clearDemoData',
   reloadCapture: 'opentime:reloadCapture',
   completeOnboarding: 'opentime:completeOnboarding',
+  startFocus: 'opentime:startFocus',
+  endFocus: 'opentime:endFocus',
+  extendFocus: 'opentime:extendFocus',
   statusEvent: 'opentime:status',
   dataEvent: 'opentime:data-changed',
 } as const
@@ -119,6 +124,12 @@ export type SessionEdit =
       productivity?: Productivity
       note?: string
     }
+  /**
+   * Close a focus session over the day it ran in. Not offered in the review
+   * panel — it is what `endFocus` writes with — but it belongs here because it
+   * is a correction like any other and shares the same one-write guarantee.
+   */
+  | { kind: 'seal-focus'; dayKey: string; focus: ActiveFocus; endTime: number }
   | {
       kind: 'claim-idle'
       dayKey: string
@@ -138,6 +149,29 @@ export interface EditResult {
 export interface CalendarResult {
   ok: boolean
   message: string
+}
+
+/**
+ * The result of ending a focus session.
+ *
+ * Carries the status back with it so the renderer never has to guess whether
+ * the session really closed, and the outcome so the "how did that go" card can
+ * be drawn from what actually landed on disk rather than from what the
+ * renderer's own timer thought.
+ */
+export interface FocusEndResult {
+  ok: boolean
+  message?: string
+  status: TrackerStatus
+  dayKey?: string
+  outcome?: FocusOutcome
+}
+
+export interface FocusStartResult {
+  ok: boolean
+  message?: string
+  status: TrackerStatus
+  focus?: ActiveFocus
 }
 
 export type ExportFormat = 'sessions-csv' | 'daily-csv' | 'backup-json'
@@ -184,6 +218,10 @@ export interface OpenTimeApi {
   clearDemoData(): Promise<ExportResult>
   reloadCapture(): Promise<CaptureHealth>
   completeOnboarding(): Promise<Settings>
+  startFocus(input: FocusStartInput): Promise<FocusStartResult>
+  endFocus(): Promise<FocusEndResult>
+  /** Push the planned end out by `minutes`. Never shortens a session. */
+  extendFocus(minutes: number): Promise<FocusStartResult>
   onStatus(handler: (status: TrackerStatus) => void): () => void
   onDataChanged(handler: () => void): () => void
 }
