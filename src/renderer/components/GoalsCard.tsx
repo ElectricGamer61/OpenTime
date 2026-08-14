@@ -75,6 +75,11 @@ export const GoalsCard = memo(function GoalsCard({
           glyph={<IconEmptyRule />}
           title="No goals switched on"
           hint="Turn one on to see today measured against a target you set, rather than one somebody else picked."
+          action={
+            <button className="btn primary small" onClick={() => setEditing(true)}>
+              {goals.length ? 'Switch one on' : 'Add a goal'}
+            </button>
+          }
         />
       ) : null}
 

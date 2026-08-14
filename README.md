@@ -8,7 +8,11 @@ focus score — with your calendar overlaid beside it. No timers to start. No
 screenshots. No account, no server, no subscription: everything stays in a folder
 on your machine that you can open, export, back up or delete.
 
-![Today](docs/screenshots/today.png)
+When you want to declare rather than observe, start a **focus session**: name the
+work, pick a length, optionally play an ambient bed, and it lands on the timeline
+as one block when you stop.
+
+![The day calendar](docs/screenshots/calendar.png)
 
 ---
 
@@ -68,11 +72,41 @@ actually peaks, how fragmented the day was, what the meetings cost, and how toda
 compares to your *own* recent baseline. The panel renders nothing when there is
 nothing worth saying.
 
-**Calendar overlay.** Meetings render beside the timeline, so time in meetings
-and time in deep work are visible against each other.
+**A day calendar, not a list.** The main view is an hour grid with a column per
+kind of work: contiguous sessions fold into one entry, so a morning of real work
+is a handful of readable blocks rather than fifty slivers. Folding never changes
+a number — an entry's duration is the sum of the sessions in it, so the gaps
+between them are still not credited as work. Click a block for the detail card:
+what it was, how long, which apps and sites it was spent in, and the corrections.
 
-**Weekly view.** Seven-day totals, per-day stacked bars, category rollups, and
-the average focus score.
+**Summary column.** Pinned beside the grid: hours worked against yesterday,
+progress against a goal you switched on, the day's breakdown as a donut by
+category, project or app, and how the time was spent across focus, neutral,
+distraction and away.
+
+**Calendar overlay.** Meetings take their own column on the grid, drawn as plans
+rather than records, so time in meetings and time in deep work are visible
+against each other.
+
+**Focus sessions.** Start a session, name what you are about to do, pick a
+length and — if it helps — an ambient bed, and the app gets out of the way: a
+dock with the countdown, a way to add fifteen minutes, and a way to stop. It is
+not a second tracker. Capture runs throughout exactly as it always does, and
+ending the session *seals* it — the rows already recorded for those minutes are
+stamped with the session's name, and only the minutes nothing was observed for
+are filled in. So the session becomes one block on the timeline with the real
+apps still underneath it, and none of the time is counted twice.
+
+The ambient beds are synthesised on your machine from filtered noise. There are
+no audio files in the bundle and nothing is streamed.
+
+![Starting a focus session](docs/screenshots/focus.png)
+
+**Reports over any range.** Week, month, quarter, year, or two dates you pick.
+Stepping is by the calendar — the month before March is February, not thirty days
+ago — and a custom range slides by its own length. Short ranges get a column per
+day, a month also gets a real calendar grid, and a year gets a cell per day laid
+out in week columns.
 
 **Light and dark.** Both themes ship and both are looked at — `npx electron
 scripts/screenshot.cjs <dir> --theme=both` captures each view in each, and
@@ -83,7 +117,7 @@ for. Settings → Appearance follows the OS or pins one.
 that restores everything. The data is one plain-JSON file per day in a folder you
 can open, copy or delete.
 
-![This week](docs/screenshots/week.png)
+![Reports](docs/screenshots/reports.png)
 
 ---
 
@@ -94,7 +128,7 @@ Requires Node 20+.
 ```bash
 npm install          # the native capture module is an optionalDependency; a failure here is not fatal
 npm run dev          # Vite dev server + esbuild watch + Electron
-npm test             # unit tests (249, no Electron needed)
+npm test             # unit tests (no Electron needed)
 npm run typecheck    # tsc --noEmit
 npm run build        # production build into dist/
 npm start            # build, then run the app
@@ -169,8 +203,9 @@ src/
   preload/       contextBridge surface (the only thing the renderer can reach)
   renderer/      React 18 + Vite
     state/         one data hook, plus a browser-only fallback client
-    components/    Now card, timeline, charts, inspector
-    views/         Today, This week, Projects & rules, Settings
+    lib/           entry folding and column layout, colour, formatting
+    components/    day grid, detail popover, summary panel, charts, inspector
+    views/         Dashboard, Calendar, Activity, Projects, Goals, Reports, Settings
   shared/ipc.ts  channel names and the typed API both sides implement
 tests/           vitest, node environment
 ```
@@ -416,6 +451,8 @@ npm test
 | `settings.test.ts` | validation of every settings value that could wedge the engine |
 | `calendar.test.ts` | OAuth URL construction, refresh margin, event mapping, revoked grants, network and malformed-response failures |
 | `demo.test.ts` | the demo generator produces real, non-overlapping, deterministic days |
+| `focus.test.ts` | sealing a focus session: boundary splits, no time lost or duplicated, gap filling, idempotent re-seal |
+| `range.test.ts` | calendar month/quarter/year arithmetic, custom-range clamping, DST-safe enumeration, the month grid |
 
 Those cover the engine. The *product* is covered by a second suite:
 
@@ -444,9 +481,6 @@ Honest list of what a production release still needs. The full account, includin
 what was left out on purpose and what should be reworked, is in
 [`docs/feature-inventory.md`](docs/feature-inventory.md).
 
-- **Month and custom-range views.** Storage and export already handle arbitrary
-  ranges, and *export* now offers a range picker; only a reporting **view** over
-  an arbitrary range is missing. Largest remaining gap.
 - **Auto-update.** No update feed. The natural choice is `electron-updater`
   against public GitHub Releases; shipping a feed only the author can publish to
   would be worse than shipping none.

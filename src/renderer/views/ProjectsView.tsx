@@ -6,9 +6,12 @@ import { Breakdown } from '../components/Charts'
 import { Empty } from '../components/Empty'
 import { IconEmptyRule } from '../components/Icons'
 import { duration } from '../lib/format'
+import { CATEGORY_PALETTE } from '../lib/palette'
 import type { OpenTimeState } from '../state/useOpenTime'
 
-const PALETTE = ['#5b8cff', '#4ade80', '#c084fc', '#f6b26b', '#38bdf8', '#fb7185', '#34d399']
+/* The same hues the calendar assigns to unrecognised categories, so a project
+   the user creates cannot land on a colour the grid would never draw. */
+const PALETTE = [...CATEGORY_PALETTE]
 
 /** Projects and rules — the categorisation layer, editable without a restart. */
 export function ProjectsView({ app }: { app: OpenTimeState }) {

@@ -27,8 +27,10 @@ import {
   retimeSession,
   splitSession,
 } from '../../core/edits'
+import { focusOutcome, sealFocus, startFocus } from '../../core/focus'
 import { sanitizeGoal } from '../../core/goals'
 import type {
+  ActiveFocus,
   CalendarEvent,
   CategoryRule,
   Goal,
@@ -64,6 +66,7 @@ function createBrowserFallback(): OpenTimeApi {
   const statusListeners = new Set<(s: TrackerStatus) => void>()
   const started = Date.now()
   let paused = false
+  let activeFocus: ActiveFocus | null = null
 
   const key = () => dayKey(Date.now(), state.settings.dayStartHour)
   const demoKeys = lastNDayKeys(14, key())
@@ -99,6 +102,7 @@ function createBrowserFallback(): OpenTimeApi {
       demo: true,
       stretchStart: paused ? null : started,
       pausedUntil: null,
+      focus: activeFocus,
       current: paused
         ? null
         : {
@@ -156,6 +160,9 @@ function createBrowserFallback(): OpenTimeApi {
         }
         case 'manual':
           state.sessionsByDay[k] = applySessionEdit(sessions, { add: [makeManualSession(edit)] })
+          break
+        case 'seal-focus':
+          state.sessionsByDay[k] = sealFocus(sessions, edit.focus, edit.endTime).sessions
           break
         case 'claim-idle': {
           const idle = state.idleByDay[k] || []
@@ -291,6 +298,60 @@ function createBrowserFallback(): OpenTimeApi {
     },
     async completeOnboarding() {
       return state.settings
+    },
+    async startFocus(input) {
+      if (activeFocus) {
+        return { ok: false, message: 'A focus session is already running.', status: status() }
+      }
+      try {
+        activeFocus = startFocus(input)
+      } catch (err) {
+        return { ok: false, message: (err as Error).message, status: status() }
+      }
+      const s = status()
+      statusListeners.forEach((fn) => fn(s))
+      return { ok: true, status: s, focus: activeFocus }
+    },
+    async extendFocus(minutes) {
+      if (!activeFocus) {
+        return { ok: false, message: 'No focus session is running.', status: status() }
+      }
+      const elapsed = Math.max(0, Math.round((Date.now() - activeFocus.startTime) / 1000))
+      activeFocus = {
+        ...activeFocus,
+        plannedSeconds: Math.max(activeFocus.plannedSeconds, elapsed) + Math.round(minutes) * 60,
+      }
+      const s = status()
+      statusListeners.forEach((fn) => fn(s))
+      return { ok: true, status: s, focus: activeFocus }
+    },
+    async endFocus() {
+      const focus = activeFocus
+      if (!focus) return { ok: false, message: 'No focus session is running.', status: status() }
+      activeFocus = null
+      const k = dayKey(focus.startTime, state.settings.dayStartHour)
+      try {
+        const sealed = sealFocus(state.sessionsByDay[k] || [], focus, Date.now())
+        state.sessionsByDay[k] = sealed.sessions
+      } catch (err) {
+        const s = status()
+        statusListeners.forEach((fn) => fn(s))
+        return { ok: false, message: (err as Error).message, status: s }
+      }
+      const s = status()
+      statusListeners.forEach((fn) => fn(s))
+      notify()
+      return {
+        ok: true,
+        status: s,
+        dayKey: k,
+        outcome: focusOutcome(state.sessionsByDay[k], focus.id) ?? {
+          label: focus.label,
+          plannedSeconds: focus.plannedSeconds,
+          actualSeconds: 0,
+          apps: [],
+        },
+      }
     },
     onStatus(handler) {
       statusListeners.add(handler)

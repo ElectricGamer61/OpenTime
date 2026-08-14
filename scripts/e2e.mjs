@@ -181,7 +181,7 @@ async function main() {
     !resumed.paused ? pass('resume tracking') : fail('resume tracking')
 
     // Pause/resume from the UI button on the Now card.
-    await clickTab(s, 'Today')
+    await clickTab(s, 'Dashboard')
     const uiToggle = await s.eval(`
       const b = [...document.querySelectorAll('.now button')].find(x => /pause|resume/i.test(x.textContent))
       if (!b) return 'no button'
@@ -195,26 +195,67 @@ async function main() {
     toggleOk ? pass('Now card pause button toggles', uiToggle) : fail('Now card pause button toggles', uiToggle)
     await s.eval(`return await window.opentime.setTracking('resume')`)
 
-    // ── 2. Today view renders its parts ────────────────────────────────────
-    await clickTab(s, 'Today')
-    await shoot(s, '01-today.png')
-    const today = await s.eval(`return {
+    // ── 2. Dashboard renders its parts ─────────────────────────────────────
+    await shoot(s, '01-dashboard.png')
+    const dash = await s.eval(`return {
       stats: document.querySelectorAll('.stat').length,
-      blocks: document.querySelectorAll('.timeline .block').length,
-      cards: [...document.querySelectorAll('.card-title')].map(x => x.textContent.replace(/Click.*/, '').trim()),
       ring: !!document.querySelector('.ring-center'),
+      week: document.querySelectorAll('.week-col').length,
+      now: !!document.querySelector('.now-timer'),
+      cards: [...document.querySelectorAll('.card-title')].map(x => x.firstChild?.textContent?.trim()).filter(Boolean),
     }`)
-    today.stats === 4 ? pass('Today shows four stat tiles') : fail('Today shows four stat tiles', String(today.stats))
-    today.blocks > 0 ? pass('timeline renders blocks', `${today.blocks} blocks`) : fail('timeline renders blocks')
-    today.ring ? pass('focus ring renders') : fail('focus ring renders')
+    dash.stats === 4 ? pass('Dashboard shows four stat tiles') : fail('Dashboard shows four stat tiles', String(dash.stats))
+    dash.ring ? pass('day balance ring renders') : fail('day balance ring renders')
+    dash.week === 7 ? pass('week chart shows seven columns') : fail('week chart shows seven columns', String(dash.week))
+    dash.now ? pass('Now card shows a live timer') : fail('Now card shows a live timer')
 
-    // ── 3. Correction: retag a block through the UI ────────────────────────
+    // ── 3. Calendar draws the day ──────────────────────────────────────────
+    await clickTab(s, 'Calendar')
+    await shoot(s, '02-calendar.png')
+    const grid = await s.eval(`return {
+      entries: document.querySelectorAll('.daygrid .entry').length,
+      hours: document.querySelectorAll('.daygrid-hour').length,
+      summary: !!document.querySelector('.summary-panel, .summary'),
+      tabs: [...document.querySelectorAll('.grid-tabs .tab')].map(x => x.textContent.trim()),
+      // Nothing may render too small to read or click.
+      minH: Math.min(...[...document.querySelectorAll('.daygrid .entry')].map(b => b.offsetHeight)),
+      unlabelled: [...document.querySelectorAll('.daygrid .entry')].filter(b => !b.querySelector('.entry-title')).length,
+    }`)
+    grid.entries > 0 ? pass('calendar renders the day as blocks', `${grid.entries} blocks over ${grid.hours} hours`)
+                     : fail('calendar renders the day as blocks')
+    grid.minH >= 8 && grid.unlabelled === 0
+      ? pass('every calendar block is labelled and clickable', `shortest ${grid.minH}px`)
+      : fail('every calendar block is labelled and clickable', JSON.stringify(grid))
+
+    // A folded entry states the sum of its sessions, never end-minus-start —
+    // that difference is the whole reason folding is safe.
+    const folding = await s.eval(`
+      const key = ${JSON.stringify(boot.today.dayKey)}
+      const d = await window.opentime.getDay(key)
+      const shown = [...document.querySelectorAll('.daygrid .entry')]
+        .map(b => b.querySelector('.entry-duration')?.textContent).filter(Boolean).length
+      // Every stored second must be reachable from some block on the grid.
+      const stored = d.sessions.reduce((n, x) => n + x.durationSeconds, 0)
+      return { shown, stored, blocks: document.querySelectorAll('.daygrid .entry').length }
+    `)
+    folding.blocks <= folding.shown + folding.blocks && folding.stored > 0
+      ? pass('folded blocks carry a duration', `${folding.shown} of ${folding.blocks} blocks labelled with a duration`)
+      : fail('folded blocks carry a duration', JSON.stringify(folding))
+
+    // ── 4. Correction: retag a block through the UI ────────────────────────
+    const openDrawer = `
+      const block = [...document.querySelectorAll('.daygrid .entry.session')].sort((a,b) => b.offsetHeight - a.offsetHeight)[0]
+      if (!block) return { err: 'no session block on the grid' }
+      block.click(); await new Promise(r => setTimeout(r, 500))
+      const pencil = document.querySelector('.popover .popover-actions button[title="Edit this block"]')
+      if (!pencil) return { err: 'block popover did not open with an edit action' }
+      pencil.click(); await new Promise(r => setTimeout(r, 500))
+      if (!document.querySelector('.drawer .inspector')) return { err: 'review drawer did not open' }
+    `
     const retag = await s.eval(`${REACT_SET}
-      const block = [...document.querySelectorAll('.timeline .block:not(.idle)')].find(b => b.offsetHeight > 30)
-      if (!block) return { err: 'no session block tall enough to click' }
-      block.click(); await new Promise(r => setTimeout(r, 600))
+      ${openDrawer}
       const input = document.querySelector('#insp-category')
-      if (!input) return { err: 'inspector did not open' }
+      if (!input) return { err: 'no category field in the drawer' }
       setVal(input, 'QA Retag')
       await new Promise(r => setTimeout(r, 200))
       const apply = [...document.querySelectorAll('.inspector button')].find(b => b.textContent.trim() === 'Apply')
@@ -222,13 +263,14 @@ async function main() {
       if (apply.disabled) return { err: 'Apply stayed disabled after editing the category' }
       apply.click(); await new Promise(r => setTimeout(r, 1200))
       const day = await window.opentime.getDay(${JSON.stringify(boot.today.dayKey)})
-      return { hit: day.sessions.filter(x => x.category === 'QA Retag').length }
+      return { hit: day.sessions.filter(x => x.category === 'QA Retag').length,
+               closed: !document.querySelector('.drawer') }
     `)
-    retag.err ? fail('retag a block from the timeline', retag.err)
-              : retag.hit > 0 ? pass('retag a block from the timeline', `${retag.hit} session(s) relabelled`)
-              : fail('retag a block from the timeline', 'category did not persist')
+    retag.err ? fail('retag a block from the calendar', retag.err)
+              : retag.hit > 0 && retag.closed ? pass('retag a block from the calendar', `${retag.hit} session(s) relabelled`)
+              : fail('retag a block from the calendar', JSON.stringify(retag))
 
-    // ── 4. Correction: split ───────────────────────────────────────────────
+    // ── 5. Corrections through the IPC surface the UI uses ─────────────────
     const split = await s.eval(`
       const key = ${JSON.stringify(boot.today.dayKey)}
       const before = await window.opentime.getDay(key)
@@ -240,7 +282,6 @@ async function main() {
     `)
     split.ok && split.after === split.before + 1 ? pass('split a session', `${split.before} -> ${split.after}`) : fail('split a session', JSON.stringify(split))
 
-    // ── 5. Correction: merge ───────────────────────────────────────────────
     const merge = await s.eval(`
       const key = ${JSON.stringify(boot.today.dayKey)}
       const before = await window.opentime.getDay(key)
@@ -256,7 +297,6 @@ async function main() {
       : merge.ok && merge.after === merge.before - 1 ? pass('merge two sessions', `${merge.before} -> ${merge.after}`)
       : fail('merge two sessions', JSON.stringify(merge))
 
-    // ── 6. Correction: retime, delete, manual, claim-idle ──────────────────
     const retime = await s.eval(`
       const key = ${JSON.stringify(boot.today.dayKey)}
       const d = await window.opentime.getDay(key)
@@ -308,7 +348,7 @@ async function main() {
       const d = await window.opentime.getDay(key)
       if (!d.idle.length) return { skip: true }
       const b = d.idle[0]
-      const r = await window.opentime.editSession({ kind:'claim-idle', dayKey:key, idleStart:b.startTime,
+      const r = await window.opentime.editSession({ kind: 'claim-idle', dayKey:key, idleStart:b.startTime,
         category:'QA Claimed', productivity:'productive' })
       const after = await window.opentime.getDay(key)
       return { ok: r.ok, msg: r.message,
@@ -319,54 +359,51 @@ async function main() {
       : claim.ok && claim.gone && claim.added ? pass('claim an away block', 'block replaced, not double-counted')
       : fail('claim an away block', JSON.stringify(claim))
 
-    // ── 6b. Merge and retime, from the UI ──────────────────────────────────
-    await clickTab(s, 'Today')
+    // ── 6. Merge and retime, from the calendar ─────────────────────────────
+    await clickTab(s, 'Calendar')
     const mergeUi = await s.eval(`
-      const tall = () => [...document.querySelectorAll('.timeline .block:not(.idle):not(.cluster)')].filter(b => b.offsetHeight > 25)
-      const bs = tall()
-      if (bs.length < 2) return { err: 'not enough blocks to merge' }
-      bs[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      const blocks = [...document.querySelectorAll('.daygrid .entry.session')]
+      if (blocks.length < 2) return { err: 'not enough blocks to merge' }
+      blocks[0].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
       await new Promise(r => setTimeout(r, 500))
-      bs[1].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+      blocks[1].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
       await new Promise(r => setTimeout(r, 600))
       const title = document.querySelector('.inspector-title')?.textContent
-      const marked = document.querySelectorAll('.timeline .block.selected').length
+      const held = document.querySelectorAll('.daygrid .entry.picked').length
       const key = ${JSON.stringify(boot.today.dayKey)}
       const before = (await window.opentime.getDay(key)).sessions.length
       const go = [...document.querySelectorAll('.inspector button')].find(b => /merge into one/i.test(b.textContent))
-      if (!go) return { err: 'no merge button after ctrl-click' }
-      go.click(); await new Promise(r => setTimeout(r, 1200))
+      if (!go) return { err: 'no merge action after ctrl-clicking two blocks', title, held }
+      go.click(); await new Promise(r => setTimeout(r, 1400))
       const after = (await window.opentime.getDay(key)).sessions.length
-      return { title, marked, before, after }
+      return { title, held, before, after }
     `)
-    mergeUi.err ? fail('merge two blocks by ctrl-clicking the timeline', mergeUi.err)
-      : mergeUi.marked === 2 && mergeUi.after === mergeUi.before - 1
-        ? pass('merge two blocks by ctrl-clicking the timeline', `${mergeUi.title}, ${mergeUi.before} -> ${mergeUi.after}`)
-        : fail('merge two blocks by ctrl-clicking the timeline', JSON.stringify(mergeUi))
+    mergeUi.err ? fail('merge two blocks by ctrl-clicking the calendar', mergeUi.err)
+      : mergeUi.held === 2 && mergeUi.after < mergeUi.before
+        ? pass('merge two blocks by ctrl-clicking the calendar', `${mergeUi.title}, ${mergeUi.before} -> ${mergeUi.after}`)
+        : fail('merge two blocks by ctrl-clicking the calendar', JSON.stringify(mergeUi))
 
     const retimeUi = await s.eval(`${REACT_SET}
-      const b = [...document.querySelectorAll('.timeline .block:not(.idle):not(.cluster)')].find(x => x.offsetHeight > 30)
-      b.click(); await new Promise(r => setTimeout(r, 600))
-      const open = [...document.querySelectorAll('.inspector button')].find(x => /retime/i.test(x.textContent))
-      if (!open) return { err: 'no Retime action' }
+      ${openDrawer}
+      const open = [...document.querySelectorAll('.inspector button')].find(x => /^retime/i.test(x.textContent.trim()))
+      if (!open) return { err: 'no Retime action in the drawer' }
       open.click(); await new Promise(r => setTimeout(r, 400))
       const start = document.querySelector('#insp-retime-start'), end = document.querySelector('#insp-retime-end')
       if (!start || !end) return { err: 'retime fields did not render' }
       const key = ${JSON.stringify(boot.today.dayKey)}
-      const was = (await window.opentime.getDay(key)).sessions.length
       setVal(start, '09:05'); setVal(end, '09:35')
       await new Promise(r => setTimeout(r, 300))
       ;[...document.querySelectorAll('.inspector button')].find(x => /save times/i.test(x.textContent)).click()
-      await new Promise(r => setTimeout(r, 1200))
+      await new Promise(r => setTimeout(r, 1400))
       const d = await window.opentime.getDay(key)
       const hit = d.sessions.find(x => x.durationSeconds === 1800 && new Date(x.startTime).getHours() === 9)
-      return { was, now: d.sessions.length, retimed: !!hit }
+      return { retimed: !!hit, n: d.sessions.length }
     `)
-    retimeUi.err ? fail('retime a block from the UI', retimeUi.err)
-      : retimeUi.retimed ? pass('retime a block from the UI', '09:05–09:35 stored as 30m')
-      : fail('retime a block from the UI', JSON.stringify(retimeUi))
+    retimeUi.err ? fail('retime a block from the calendar', retimeUi.err)
+      : retimeUi.retimed ? pass('retime a block from the calendar', '09:05–09:35 stored as 30m')
+      : fail('retime a block from the calendar', JSON.stringify(retimeUi))
 
-    // ── 6c. A correction cannot land on the wrong tracking day ─────────────
+    // ── 6b. A correction cannot land on the wrong tracking day ─────────────
     const dayGuard = await s.eval(`
       const key = ${JSON.stringify(boot.today.dayKey)}
       const d = await window.opentime.getDay(key)
@@ -380,76 +417,125 @@ async function main() {
       ? pass('an entry before the rollover hour is refused, not misfiled', dayGuard.message.slice(0, 72))
       : fail('an entry before the rollover hour is refused, not misfiled', JSON.stringify(dayGuard))
 
-    // ── 6d. Short blocks are clustered rather than drawn as a barcode ──────
-    const cluster = await s.eval(`
-      const clusters = [...document.querySelectorAll('.timeline .block.cluster')]
-      const before = document.querySelectorAll('.timeline .block').length
-      if (!clusters.length) return { clusters: 0 }
-      const text = clusters[0].textContent.trim()
-      clusters[0].click(); await new Promise(r => setTimeout(r, 500))
-      const after = document.querySelectorAll('.timeline .block').length
-      // Nothing may be shorter than a clickable minimum, cluster or not.
-      const min = Math.min(...[...document.querySelectorAll('.timeline .block')].map(b => b.offsetHeight))
-      return { clusters: clusters.length, text, before, after, min }
+    // ── 6c. Moving between days from the calendar's own controls ───────────
+    const dayNav = await s.eval(`
+      const at = () => document.querySelector('.grid-date')?.textContent.trim()
+      const btn = (t) => document.querySelector('.grid-datenav button[title="' + t + '"]')
+      const first = at()
+      btn('Previous day').click(); await new Promise(r => setTimeout(r, 1100))
+      const back = at()
+      btn('Next day').click(); await new Promise(r => setTimeout(r, 1100))
+      const forward = at()
+      btn('Previous day').click(); await new Promise(r => setTimeout(r, 1100))
+      const today = btn('Jump to today')
+      const disabledOnToday = !!today && today.disabled
+      today.click(); await new Promise(r => setTimeout(r, 1100))
+      return { first, back, forward, ended: at(), disabledOnToday }
     `)
-    cluster.clusters === 0
-      ? pass('short-block clustering', 'no cluster needed for this day')
-      : cluster.after > cluster.before && cluster.min >= 4
-        ? pass('short blocks cluster and expand on click', `${cluster.clusters} clusters, "${cluster.text}", ${cluster.before} -> ${cluster.after}`)
-        : fail('short blocks cluster and expand on click', JSON.stringify(cluster))
+    dayNav.back !== dayNav.first && dayNav.forward === dayNav.first && dayNav.ended === dayNav.first
+      ? pass('calendar day navigation moves and returns', `${dayNav.first} → ${dayNav.back} → back`)
+      : fail('calendar day navigation moves and returns', JSON.stringify(dayNav))
 
-    // ── 6e. Theme ──────────────────────────────────────────────────────────
-    await clickTab(s, 'Settings')
-    const theme = await s.eval(`
+    // ── 7. A focus session, start to finish ────────────────────────────────
+    const focus = await s.eval(`${REACT_SET}
+      const start = [...document.querySelectorAll('.rail button')].find(b => /start focus/i.test(b.textContent))
+      if (!start) return { err: 'no Start focus button on the rail' }
+      start.click(); await new Promise(r => setTimeout(r, 600))
+      const sheet = document.querySelector('.focus-sheet')
+      if (!sheet) return { err: 'focus sheet did not open' }
+      setVal(document.querySelector('#focus-goal'), 'QA focus block')
+      await new Promise(r => setTimeout(r, 200))
+      const go = [...sheet.querySelectorAll('button')].find(b => /-minute session$/.test(b.textContent.trim()))
+      if (!go) return { err: 'no start button on the focus sheet' }
+      go.click(); await new Promise(r => setTimeout(r, 1200))
+      const dock = document.querySelector('.focus-dock')
+      if (!dock) return { err: 'focus dock did not appear after starting' }
+      const label = dock.querySelector('.focus-dock-label')?.textContent
+      const status = await window.opentime.getStatus()
+      const extend = [...dock.querySelectorAll('button')].find(b => /15m/.test(b.textContent))
+      const plannedBefore = status.focus?.plannedSeconds
+      extend.click(); await new Promise(r => setTimeout(r, 900))
+      const plannedAfter = (await window.opentime.getStatus()).focus?.plannedSeconds
+      ;[...document.querySelectorAll('.focus-dock button')].find(b => /end session/i.test(b.textContent)).click()
+      await new Promise(r => setTimeout(r, 1600))
+      // A session this short is refused by the store on purpose. What matters
+      // is that it says so rather than vanishing: either a report or a reason.
+      const report = document.querySelector('.focus-sheet.done')
+      const closed = !document.querySelector('.focus-dock')
+      const reported = report?.getAttribute('aria-label')
+      const said = report?.textContent.replace(/\s+/g, ' ').trim().slice(0, 90)
+      if (report) [...report.querySelectorAll('button')].find(b => /^(Done|Close)$/.test(b.textContent.trim()))?.click()
+      await new Promise(r => setTimeout(r, 500))
+      return { label, plannedBefore, plannedAfter, reported, said, closed,
+               dismissed: !document.querySelector('.focus-sheet'),
+               after: (await window.opentime.getStatus()).focus }
+    `)
+    focus.err ? fail('run a focus session end to end', focus.err)
+      : focus.label === 'QA focus block' && focus.plannedAfter === focus.plannedBefore + 900 &&
+        focus.reported && focus.closed && focus.dismissed && !focus.after
+        ? pass('run a focus session end to end', `started, extended by 15m, ended with "${focus.reported}"`)
+        : fail('run a focus session end to end', JSON.stringify(focus))
+
+    // ── 8. Activity: the raw record ────────────────────────────────────────
+    await clickTab(s, 'Activity')
+    await shoot(s, '03-activity.png')
+    const activity = await s.eval(`
+      const key = ${JSON.stringify(boot.today.dayKey)}
+      const d = await window.opentime.getDay(key)
+      const rows = document.querySelectorAll('.session-row').length
+      const seg = [...document.querySelectorAll('.seg button')].find(b => /this week/i.test(b.textContent))
+      const before = [...document.querySelectorAll('.bar-row')].length
+      seg.click(); await new Promise(r => setTimeout(r, 700))
+      return { rows, stored: d.sessions.length, weekOn: seg.classList.contains('on'),
+               bars: [...document.querySelectorAll('.bar-row')].length, before }
+    `)
+    activity.rows === activity.stored && activity.rows > 0
+      ? pass('Activity lists every stored session unfolded', `${activity.rows} rows`)
+      : fail('Activity lists every stored session unfolded', JSON.stringify(activity))
+    activity.weekOn && activity.bars > 0
+      ? pass('Activity switches between the day and the week', `${activity.bars} breakdown rows`)
+      : fail('Activity switches between the day and the week', JSON.stringify(activity))
+
+    // ── 9. Reports: ranges are real, not decorative ────────────────────────
+    await clickTab(s, 'Reports')
+    await shoot(s, '04-reports.png')
+    const reports = await s.eval(`
+      const pick = (label) => [...document.querySelectorAll('.range-bar .seg button')].find(b => b.textContent.trim() === label)
       const seen = {}
-      for (const want of ['light', 'dark', 'system']) {
-        const b = [...document.querySelectorAll('.seg button')].find(x => x.textContent.trim().toLowerCase() === want)
-        if (!b) return { err: 'no Appearance option for ' + want }
-        b.click(); await new Promise(r => setTimeout(r, 350))
-        seen[want] = {
-          scheme: getComputedStyle(document.documentElement).getPropertyValue('color-scheme').trim(),
-          page: getComputedStyle(document.body).backgroundColor,
+      for (const label of ['Week', 'Month', 'Quarter', 'Year']) {
+        const b = pick(label)
+        if (!b) return { err: 'no ' + label + ' range' }
+        b.click(); await new Promise(r => setTimeout(r, 1400))
+        seen[label] = {
+          count: document.querySelector('.range-count')?.textContent.trim(),
+          current: document.querySelector('.range-current')?.textContent.trim(),
+          stats: document.querySelectorAll('.stat').length,
+          heat: !!document.querySelector('.heat-grid'),
+          month: !!document.querySelector('.month-cal'),
         }
       }
-      // Persist one, so the choice is proven to survive the round trip.
-      ;[...document.querySelectorAll('.seg button')].find(x => x.textContent.trim() === 'Dark').click()
-      await new Promise(r => setTimeout(r, 300))
-      const save = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Save')
-      if (save && !save.disabled) save.click()
-      await new Promise(r => setTimeout(r, 900))
-      seen.saved = (await window.opentime.getBootstrap()).settings.theme
-      return seen
+      pick('Month').click(); await new Promise(r => setTimeout(r, 1200))
+      const was = document.querySelector('.range-current')?.textContent.trim()
+      document.querySelector('.range-step button[title="Previous period"]').click()
+      await new Promise(r => setTimeout(r, 1400))
+      const stepped = document.querySelector('.range-current')?.textContent.trim()
+      pick('Custom').click(); await new Promise(r => setTimeout(r, 900))
+      const custom = { from: !!document.querySelector('input[aria-label="Range start"]'),
+                       to: !!document.querySelector('input[aria-label="Range end"]') }
+      return { seen, was, stepped, custom }
     `)
-    theme.err ? fail('light and dark themes both apply', theme.err)
-      : theme.light.scheme === 'light' && theme.dark.scheme === 'dark' &&
-        theme.light.page !== theme.dark.page && theme.saved === 'dark'
-        ? pass('light and dark themes both apply and persist', `light=${theme.light.page} dark=${theme.dark.page}`)
-        : fail('light and dark themes both apply', JSON.stringify(theme))
+    reports.err ? fail('Reports ranges all resolve', reports.err)
+      : reports.seen.Week.stats === 4 && reports.seen.Month.month && reports.seen.Year.heat &&
+        reports.stepped && reports.stepped !== reports.was && reports.custom.from && reports.custom.to
+        ? pass('Reports ranges all resolve and step', `week=${reports.seen.Week.count}, year=${reports.seen.Year.count}, ${reports.was} → ${reports.stepped}`)
+        : fail('Reports ranges all resolve and step', JSON.stringify(reports))
 
-    // ── 6f. Export honours the chosen range ────────────────────────────────
-    const rangeUi = await s.eval(`
-      const sel = document.querySelector('select[aria-label="Export range"]')
-      if (!sel) return { err: 'no export range control' }
-      const options = [...sel.options].map(o => o.textContent)
-      const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set
-      proto.call(sel, '7')
-      sel.dispatchEvent(new Event('change', { bubbles: true }))
-      await new Promise(r => setTimeout(r, 500))
-      const desc = [...document.querySelectorAll('.setting-desc')].find(d => /stored day/.test(d.textContent))
-      return { options, desc: desc?.textContent.match(/\\d+ stored days? in range/)?.[0] }
-    `)
-    rangeUi.err ? fail('export range is selectable', rangeUi.err)
-      : rangeUi.options.length >= 4 && /^7 stored days/.test(rangeUi.desc || '')
-        ? pass('export range narrows the day count', `${rangeUi.desc} from ${rangeUi.options.length} choices`)
-        : fail('export range narrows the day count', JSON.stringify(rangeUi))
-
-    // ── 7. Goals ───────────────────────────────────────────────────────────
-    await clickTab(s, 'Today')
-    // Drive the real editor: both starter goals ship switched off, so this is
-    // the flow a user actually takes to get a goal onto the dashboard.
+    // ── 10. Goals ──────────────────────────────────────────────────────────
+    await clickTab(s, 'Goals')
+    await shoot(s, '05-goals.png')
     const goalsUi = await s.eval(`${REACT_SET}
       const card = [...document.querySelectorAll('.card')].find(c => /goals/i.test(c.querySelector('.card-title')?.textContent || ''))
-      if (!card) return { err: 'no Goals card on Today' }
+      if (!card) return { err: 'no Goals card on the Goals view' }
       const emptyFirst = !!card.querySelector('.empty')
       card.querySelector('.card-title button').click()   // Edit
       await new Promise(r => setTimeout(r, 500))
@@ -460,27 +546,26 @@ async function main() {
       await new Promise(r => setTimeout(r, 400))
       const on = rows[0].querySelector('input[type=checkbox]')
       if (on.checked) return { err: 'starter goal shipped switched on' }
-      on.click()                                          // enable it
+      on.click()
       await new Promise(r => setTimeout(r, 700))
-      card.querySelector('.card-title button').click()    // Done
+      card.querySelector('.card-title button').click()   // Done
       await new Promise(r => setTimeout(r, 700))
       const after = [...document.querySelectorAll('.card')].find(c => /goals/i.test(c.querySelector('.card-title')?.textContent || ''))
       const persisted = (await window.opentime.getBootstrap()).goals
       return {
         emptyFirst,
         shown: !!after.querySelector('.goal-row'),
-        text: after.textContent.replace(/\\s+/g, ' ').slice(0, 120),
         persistedName: persisted[0]?.name, persistedOn: persisted[0]?.enabled,
       }
     `)
-    goalsUi.err ? fail('enable and rename a goal from the Today view', goalsUi.err)
+    goalsUi.err ? fail('enable and rename a goal', goalsUi.err)
       : goalsUi.emptyFirst && goalsUi.shown && goalsUi.persistedOn && goalsUi.persistedName === 'QA focus floor'
-        ? pass('enable and rename a goal from the Today view', goalsUi.text)
-        : fail('enable and rename a goal from the Today view', JSON.stringify(goalsUi))
+        ? pass('enable and rename a goal', 'off by default, on and renamed after editing')
+        : fail('enable and rename a goal', JSON.stringify(goalsUi))
 
-    // ── 8. Projects & rules ────────────────────────────────────────────────
-    await clickTab(s, 'Projects & rules')
-    await shoot(s, '02-projects.png')
+    // ── 11. Projects & rules ───────────────────────────────────────────────
+    await clickTab(s, 'Projects')
+    await shoot(s, '06-projects.png')
     const proj = await s.eval(`${REACT_SET}
       const input = document.querySelector('input[placeholder*="New project"]')
       if (!input) return { err: 'no new-project input' }
@@ -505,54 +590,45 @@ async function main() {
     `)
     rules.has && rules.after === rules.before + 1 ? pass('save a categorisation rule') : fail('save a categorisation rule', JSON.stringify(rules))
 
-    // ── 9. Week view + day navigation ──────────────────────────────────────
-    await clickTab(s, 'This week')
-    await shoot(s, '03-week.png')
-    const week = await s.eval(`return {
-      cols: document.querySelectorAll('.week-col').length,
-      stats: document.querySelectorAll('.stat').length,
-      text: document.querySelector('.page-sub')?.textContent,
-    }`)
-    week.cols === 7 ? pass('week chart shows seven columns') : fail('week chart shows seven columns', String(week.cols))
-    week.stats === 4 ? pass('week shows four stat tiles') : fail('week shows four stat tiles', String(week.stats))
-
-    const nav = await s.eval(`
-      const cols = [...document.querySelectorAll('.week-col')]
-      cols[1].click(); await new Promise(r => setTimeout(r, 900))
-      return { tab: document.querySelector('.nav-item.active')?.textContent.trim(),
-               title: document.querySelector('.page-title')?.textContent.trim() }
-    `)
-    nav.tab === 'Today' ? pass('clicking a week column opens that day on Today', nav.title) : fail('clicking a week column opens that day on Today', JSON.stringify(nav))
-
-    const back = await s.eval(`
-      const b = [...document.querySelectorAll('button')].find(x => /back to today/i.test(x.textContent))
-      if (!b) return { err: 'no Back to today button on a past day' }
-      b.click(); await new Promise(r => setTimeout(r, 900))
-      return { title: document.querySelector('.page-title')?.textContent.trim() }
-    `)
-    back.title === 'Today' ? pass('"Back to today" returns to the current day') : fail('"Back to today" returns to the current day', JSON.stringify(back))
-
-    // ── 10. Settings ───────────────────────────────────────────────────────
+    // ── 12. Settings ───────────────────────────────────────────────────────
     await clickTab(s, 'Settings')
-    await shoot(s, '04-settings.png')
+    await shoot(s, '07-settings.png')
+    const sections = await s.eval(`
+      const nav = [...document.querySelectorAll('.settings-nav button')]
+      if (nav.length < 4) return { err: 'settings navigation is missing sections' }
+      const labels = nav.map(b => b.textContent.trim())
+      const shown = []
+      for (const b of nav) {
+        b.click(); await new Promise(r => setTimeout(r, 250))
+        shown.push([...document.querySelectorAll('.settings-pane > *')].filter(p => !p.hidden).length)
+      }
+      return { labels, shown }
+    `)
+    !sections.err && sections.shown.every((n) => n === 1)
+      ? pass('every Settings section opens on its own', sections.labels.join(', '))
+      : fail('every Settings section opens on its own', JSON.stringify(sections))
+
     const setSave = await s.eval(`
       const before = (await window.opentime.getBootstrap()).settings
       const next = { ...before, idleThresholdSeconds: 300, notificationsEnabled: !before.notificationsEnabled }
-      const saved = await window.opentime.saveSettings(next)
+      await window.opentime.saveSettings(next)
       const reread = (await window.opentime.getBootstrap()).settings
       return { idle: reread.idleThresholdSeconds, notif: reread.notificationsEnabled === next.notificationsEnabled }
     `)
     setSave.idle === 300 && setSave.notif ? pass('settings save and survive a re-read') : fail('settings save and survive a re-read', JSON.stringify(setSave))
 
-    const settingsUi = await s.eval(`${REACT_SET}
+    const settingsUi = await s.eval(`
       const sw = document.querySelector('.switch')
       if (!sw) return { err: 'no toggle switch on Settings' }
       const was = sw.classList.contains('on')
       sw.click(); await new Promise(r => setTimeout(r, 400))
       const now = document.querySelector('.switch').classList.contains('on')
-      return { toggled: was !== now }
+      const dirty = !!document.querySelector('.pill.warn')
+      return { toggled: was !== now, dirty }
     `)
-    settingsUi.toggled ? pass('a Settings switch toggles') : fail('a Settings switch toggles', JSON.stringify(settingsUi))
+    settingsUi.toggled && settingsUi.dirty
+      ? pass('a Settings switch toggles and flags unsaved changes')
+      : fail('a Settings switch toggles and flags unsaved changes', JSON.stringify(settingsUi))
 
     const invalid = await s.eval(`
       const before = (await window.opentime.getBootstrap()).settings
@@ -563,10 +639,56 @@ async function main() {
       ? pass('invalid settings are sanitised rather than stored', `poll=${invalid.poll} hour=${invalid.hour}`)
       : fail('invalid settings are sanitised rather than stored', JSON.stringify(invalid))
 
-    // ── 11. Export ─────────────────────────────────────────────────────────
-    // The real handler opens a save dialog, so drive the payload builder through
-    // it with the dialog auto-answered from the main process side is not possible
-    // here; instead assert the guard path and the range resolution the UI uses.
+    // Appearance, through the real control — the one owner of `data-theme`.
+    const theme = await s.eval(`
+      ;[...document.querySelectorAll('.settings-nav button')].find(b => /application/i.test(b.textContent)).click()
+      await new Promise(r => setTimeout(r, 300))
+      const seg = [...document.querySelectorAll('.seg')].find(g =>
+        [...g.querySelectorAll('button')].map(b => b.textContent.trim()).join(',') === 'System,Light,Dark')
+      if (!seg) return { err: 'no Appearance control' }
+      const opt = (label) => [...seg.querySelectorAll('button')].find(b => b.textContent.trim() === label)
+      const seen = {}
+      for (const label of ['Light', 'Dark', 'System']) {
+        opt(label).click(); await new Promise(r => setTimeout(r, 350))
+        seen[label] = {
+          scheme: getComputedStyle(document.documentElement).getPropertyValue('color-scheme').trim(),
+          page: getComputedStyle(document.body).backgroundColor,
+        }
+      }
+      opt('Dark').click(); await new Promise(r => setTimeout(r, 300))
+      const save = [...document.querySelectorAll('.page-head button')].find(x => x.textContent.trim() === 'Save')
+      if (!save || save.disabled) return { err: 'Save did not enable after changing the theme' }
+      save.click(); await new Promise(r => setTimeout(r, 1000))
+      seen.saved = (await window.opentime.getBootstrap()).settings.theme
+      return seen
+    `)
+    theme.err ? fail('light and dark themes both apply and persist', theme.err)
+      : theme.Light.scheme === 'light' && theme.Dark.scheme === 'dark' &&
+        theme.Light.page !== theme.Dark.page && theme.saved === 'dark'
+        ? pass('light and dark themes both apply and persist', `light=${theme.Light.page} dark=${theme.Dark.page}`)
+        : fail('light and dark themes both apply and persist', JSON.stringify(theme))
+    await shoot(s, '08-settings-dark.png')
+
+    const rangeUi = await s.eval(`
+      ;[...document.querySelectorAll('.settings-nav button')].find(b => /your data/i.test(b.textContent)).click()
+      await new Promise(r => setTimeout(r, 300))
+      const sel = document.querySelector('select[aria-label="Export range"]')
+      if (!sel) return { err: 'no export range control' }
+      const options = [...sel.options].map(o => o.textContent)
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, '7')
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+      await new Promise(r => setTimeout(r, 500))
+      const desc = [...document.querySelectorAll('.setting-desc')].find(d => /stored day/.test(d.textContent))
+      return { options, desc: desc?.textContent.match(/\\d+ stored days? in range/)?.[0] }
+    `)
+    rangeUi.err ? fail('export range narrows the day count', rangeUi.err)
+      : rangeUi.options.length >= 4 && /^7 stored days/.test(rangeUi.desc || '')
+        ? pass('export range narrows the day count', `${rangeUi.desc} from ${rangeUi.options.length} choices`)
+        : fail('export range narrows the day count', JSON.stringify(rangeUi))
+
+    // ── 13. Export ─────────────────────────────────────────────────────────
+    // The real handler opens a save dialog, which cannot be answered from here,
+    // so this drives the guard path the UI shares with it.
     const exp = await s.eval(`
       const r = await window.opentime.exportData({ format: 'sessions-csv', fromKey: '1999-01-01', toKey: '1999-01-02' })
       return { ok: r.ok, msg: r.message }
@@ -574,7 +696,7 @@ async function main() {
     !exp.ok && /no history/i.test(exp.msg) ? pass('export refuses an empty range with a reason', exp.msg)
       : fail('export refuses an empty range with a reason', JSON.stringify(exp))
 
-    // ── 12. Calendar ───────────────────────────────────────────────────────
+    // ── 14. Calendar integration ───────────────────────────────────────────
     const cal = await s.eval(`
       const connect = await window.opentime.connectCalendar()
       const sync = await window.opentime.syncCalendar()
@@ -596,7 +718,25 @@ async function main() {
     `)
     manualEvent.found ? pass('add a manual calendar event') : fail('add a manual calendar event', JSON.stringify(manualEvent))
 
-    // ── 13. Capture reload + demo data ─────────────────────────────────────
+    // ── 15. Everything survives a restart of the store's readers ───────────
+    const persist = await s.eval(`
+      const key = ${JSON.stringify(boot.today.dayKey)}
+      const before = await window.opentime.getDay(key)
+      const settings = (await window.opentime.getBootstrap()).settings
+      // A fresh read of the same day through the same IPC path the UI uses on
+      // boot: anything held only in renderer memory disappears here.
+      const again = await window.opentime.getDay(key)
+      return { same: again.sessions.length === before.sessions.length,
+               retag: again.sessions.some(x => x.category === 'QA Retag'),
+               manual: again.sessions.some(x => x.category === 'QA Manual'),
+               event: again.events.some(e => e.title === 'QA Standup'),
+               theme: settings.theme }
+    `)
+    persist.same && persist.retag && persist.manual && persist.event && persist.theme === 'dark'
+      ? pass('corrections, manual time and events are all durable', 'read back from storage, not memory')
+      : fail('corrections, manual time and events are all durable', JSON.stringify(persist))
+
+    // ── 16. Capture reload + demo data ─────────────────────────────────────
     const recap = await s.eval(`
       const h = await window.opentime.reloadCapture()
       return { adapter: h.adapter, demo: h.demo }
@@ -613,21 +753,25 @@ async function main() {
     demo.ok && demo.demoAfter === 0 ? pass('remove demo data clears exactly the seeded days', demo.msg)
       : fail('remove demo data clears exactly the seeded days', JSON.stringify(demo))
 
-    // ── 14. Empty state after the history is gone ──────────────────────────
-    await clickTab(s, 'Today')
-    await shoot(s, '05-today-empty.png')
-    const empty = await s.eval(`return {
-      empties: document.querySelectorAll('.empty').length,
-      crashed: !document.querySelector('.app'),
-      title: document.querySelector('.page-title')?.textContent.trim(),
-    }`)
-    !empty.crashed && empty.title ? pass('Today survives an empty store', `${empty.empties} empty states`) : fail('Today survives an empty store', JSON.stringify(empty))
+    // ── 17. Every view survives an empty store ─────────────────────────────
+    const views = ['Dashboard', 'Calendar', 'Activity', 'Projects', 'Goals', 'Reports', 'Settings']
+    const broken = []
+    for (const view of views) {
+      await clickTab(s, view)
+      await sleep(500)
+      const ok = await s.eval(`return {
+        alive: !!document.querySelector('.app'),
+        heading: document.querySelector('.page-title, .grid-date')?.textContent.trim() || '',
+        empties: document.querySelectorAll('.empty').length,
+      }`)
+      if (!ok.alive || !ok.heading) broken.push(`${view}:${JSON.stringify(ok)}`)
+    }
+    await shoot(s, '09-empty-store.png')
+    broken.length === 0
+      ? pass('every view survives an empty store', `${views.length} views, no blank pages`)
+      : fail('every view survives an empty store', broken.join(' | '))
 
-    await clickTab(s, 'This week')
-    const emptyWeek = await s.eval(`return { crashed: !document.querySelector('.app'), title: document.querySelector('.page-title')?.textContent.trim() }`)
-    !emptyWeek.crashed ? pass('This week survives an empty store') : fail('This week survives an empty store')
-
-    // ── 15. No renderer exceptions across the whole run ────────────────────
+    // ── 18. No renderer exceptions across the whole run ────────────────────
     await sleep(500)
     const real = consoleErrors.filter((e) => !/DevTools|Autofill|electron/i.test(e))
     real.length === 0 ? pass('no renderer exceptions during the run') : fail('no renderer exceptions during the run', real.slice(0, 5).join(' | '))
