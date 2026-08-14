@@ -3699,6 +3699,13 @@ select option {
   color: var(--productive);
 }
 
+/* Nothing was written, so the green success mark would be a lie. */
+.focus-done-mark.muted {
+  background: var(--surface-3);
+  border-color: var(--line);
+  color: var(--text-dim);
+}
+
 .focus-done-head h2 {
   margin: 0;
   font-size: 17px;

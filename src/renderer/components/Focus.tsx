@@ -53,6 +53,8 @@ export function FocusMode({
   const active = app.status?.focus ?? null
   const [outcome, setOutcome] = useState<FocusOutcome | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** Why a finished session left nothing behind, shown in place of the report. */
+  const [ended, setEnded] = useState<string | null>(null)
   const [sound, setSound] = useState<AmbientBedId>('silence')
   const [muted, setMuted] = useState(false)
   const engine = useRef<AmbientEngine | null>(null)
@@ -98,9 +100,14 @@ export function FocusMode({
     const result = await app.endFocus()
     engine.current?.stop()
     if (!result.ok) {
-      setError(result.message || 'That session could not be recorded.')
+      // The session is over either way — the dock has already gone, and with it
+      // the only place an inline error could have been read. Ending a session
+      // and being told nothing is how a tracker loses trust, so the reason gets
+      // its own sheet.
+      setEnded(result.message || 'That session could not be recorded.')
       return
     }
+    setError(null)
     setOutcome(result.outcome ?? null)
     if (result.dayKey) app.selectDay(result.dayKey)
   }
@@ -139,6 +146,10 @@ export function FocusMode({
             />,
             document.body
           )
+        : null}
+
+      {ended
+        ? createPortal(<FocusUnrecorded reason={ended} onClose={() => setEnded(null)} />, document.body)
         : null}
 
       {outcome
@@ -423,6 +434,52 @@ function FocusDock({
       </div>
 
       {error ? <div className="focus-dock-error">{error}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * The session ended but nothing was written.
+ *
+ * The only way this happens today is a session shorter than a minute, which the
+ * store refuses on purpose. It still deserves a sheet: the alternative is a
+ * countdown that simply vanishes, which reads as lost work rather than as a
+ * session too short to be worth a block.
+ */
+function FocusUnrecorded({ reason, onClose }: { reason: string; onClose(): void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="drawer-scrim focus-scrim" onClick={onClose}>
+      <div
+        className="focus-sheet done"
+        role="dialog"
+        aria-label="Focus session not recorded"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="focus-done-head">
+          <span className="focus-done-mark muted">
+            <IconClose size={20} />
+          </span>
+          <h2>Nothing to record</h2>
+          <p>{reason}</p>
+        </div>
+        <p className="focus-hint">
+          Your tracked time is untouched — a focus session only puts a name on minutes that were
+          already being recorded.
+        </p>
+        <div className="focus-sheet-foot">
+          <button className="btn primary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
