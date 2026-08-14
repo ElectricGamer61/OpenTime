@@ -209,6 +209,42 @@ async function main() {
     dash.week === 7 ? pass('week chart shows seven columns') : fail('week chart shows seven columns', String(dash.week))
     dash.now ? pass('Now card shows a live timer') : fail('Now card shows a live timer')
 
+    // ── 2b. The workspace card opens unclipped ─────────────────────────────
+    // It used to render inside the rail, which is `overflow: hidden` and
+    // narrower than the card, so it was sliced off mid-sentence. Assert the
+    // whole card is inside the viewport and inside every clipping ancestor,
+    // rather than just that it exists — existence was already true when it was
+    // unreadable. Checked at the default width and at a narrow one.
+    for (const [label, width] of [['default width', 1440], ['a narrow window', 900]]) {
+      await s.send('Emulation.setDeviceMetricsOverride',
+        { width, height: 900, deviceScaleFactor: 0, mobile: false })
+      const card = await s.eval(`
+        document.querySelector('.workspace').click()
+        await new Promise(r => setTimeout(r, 500))
+        const menu = document.querySelector('.workspace-menu')
+        if (!menu) return { open: false }
+        const m = menu.getBoundingClientRect()
+        const clipped = []
+        for (let el = menu.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+          const cs = getComputedStyle(el)
+          if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue
+          const r = el.getBoundingClientRect()
+          if (m.left < r.left - 1 || m.right > r.right + 1 || m.top < r.top - 1 || m.bottom > r.bottom + 1)
+            clipped.push(el.className || el.tagName)
+        }
+        const head = menu.querySelector('.workspace-menu-head')
+        const onscreen = m.left >= 0 && m.top >= 0 && m.right <= innerWidth && m.bottom <= innerHeight
+        document.querySelector('.workspace').click()
+        await new Promise(r => setTimeout(r, 300))
+        return { open: true, clipped, onscreen, width: Math.round(m.width),
+                 headOverflows: head.scrollWidth > head.clientWidth + 1 }
+      `)
+      const ok = card.open && card.onscreen && !card.clipped.length && !card.headOverflows
+      ok ? pass(`workspace card opens fully visible at ${label}`, `${card.width}px wide`)
+         : fail(`workspace card opens fully visible at ${label}`, JSON.stringify(card))
+    }
+    await s.send('Emulation.clearDeviceMetricsOverride')
+
     // ── 3. Calendar draws the day ──────────────────────────────────────────
     await clickTab(s, 'Calendar')
     await shoot(s, '02-calendar.png')
