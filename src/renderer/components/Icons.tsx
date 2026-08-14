@@ -353,11 +353,18 @@ export function IconPlus(props: IconProps) {
   )
 }
 
-/** Range — a bracketed span, for the month and custom report ranges. */
+/**
+ * Range — a measured span between two end caps, for the month and custom
+ * report ranges.
+ *
+ * The caps have to stay short against a long bar. Drawn full height with a
+ * shorter bar between them, this is the letter H, and beside two date inputs
+ * that is exactly how it read.
+ */
 export function IconRange(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M6.5 5.5v13M17.5 5.5v13M6.5 12h11" />
+      <path d="M4.5 8.5v7M19.5 8.5v7M4.5 12h15" />
     </Svg>
   )
 }

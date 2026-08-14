@@ -472,6 +472,34 @@ async function main() {
       ? pass('calendar day navigation moves and returns', `${dayNav.first} → ${dayNav.back} → back`)
       : fail('calendar day navigation moves and returns', JSON.stringify(dayNav))
 
+    // ── 6d. The stacked calendar is still a calendar ───────────────────────
+    // Below 980px the summary drops under the grid. Both panes carry
+    // `min-height: 0` so they can scroll independently as columns — and that
+    // is exactly what collapsed the day to a ~90px sliver showing one hour
+    // label, with the grid's contents drawn over the panel below it.
+    await s.send('Emulation.setDeviceMetricsOverride',
+      { width: 900, height: 700, deviceScaleFactor: 0, mobile: false })
+    const stacked = await s.eval(`
+      await new Promise(r => setTimeout(r, 600))
+      const rect = (sel) => document.querySelector(sel).getBoundingClientRect()
+      const main = rect('.calendar-main')
+      const summary = rect('.summary')
+      const scroll = rect('.grid-scroll')
+      const cal = document.querySelector('.calendar')
+      return {
+        stackedBelow: summary.top >= main.bottom - 1,
+        gridHeight: Math.round(scroll.height),
+        containedGrid: scroll.bottom <= main.bottom + 1,
+        scrolls: cal.scrollHeight > cal.clientHeight,
+        noSideScroll: document.documentElement.scrollWidth <= innerWidth,
+      }
+    `)
+    await s.send('Emulation.clearDeviceMetricsOverride')
+    stacked.stackedBelow && stacked.containedGrid && stacked.gridHeight >= 400 &&
+      stacked.scrolls && stacked.noSideScroll
+      ? pass('the calendar stacks without collapsing the day', `${stacked.gridHeight}px of grid above the summary`)
+      : fail('the calendar stacks without collapsing the day', JSON.stringify(stacked))
+
     // ── 7. A focus session, start to finish ────────────────────────────────
     const focus = await s.eval(`${REACT_SET}
       const start = [...document.querySelectorAll('.rail button')].find(b => /start focus/i.test(b.textContent))
@@ -598,6 +626,56 @@ async function main() {
       : goalsUi.emptyFirst && goalsUi.shown && goalsUi.persistedOn && goalsUi.persistedName === 'QA focus floor'
         ? pass('enable and rename a goal', 'off by default, on and renamed after editing')
         : fail('enable and rename a goal', JSON.stringify(goalsUi))
+
+    // The week chart on Goals says "click a day to open it on the calendar",
+    // and for a while it only changed the selected day — leaving you on a view
+    // with no days on it, so the click read as broken. Dashboard and Reports
+    // both navigate; this pins that Goals does too.
+    const goalsDay = await s.eval(`
+      const cols = [...document.querySelectorAll('.goals-side .week-col')]
+      if (cols.length < 2) return { err: 'no week chart beside the goals editor' }
+      const target = cols.find(c => !c.classList.contains('active'))
+      if (!target) return { err: 'every column is already the selected day' }
+      const label = target.querySelector('.week-foot')?.textContent.trim()
+      target.click()
+      await new Promise(r => setTimeout(r, 900))
+      return {
+        label,
+        tab: document.querySelector('.nav-item.active')?.textContent.trim(),
+        grid: !!document.querySelector('.calendar .day-grid, .calendar-main'),
+      }
+    `)
+    goalsDay.err ? fail('a day on the Goals week chart opens the calendar', goalsDay.err)
+      : goalsDay.tab === 'Calendar' && goalsDay.grid
+        ? pass('a day on the Goals week chart opens the calendar', `${goalsDay.label} → Calendar`)
+        : fail('a day on the Goals week chart opens the calendar', JSON.stringify(goalsDay))
+
+    // The scope control moves the breakdowns onto the week; the subtitle has to
+    // move with them, or the header contradicts the numbers under it.
+    await clickTab(s, 'Activity')
+    const scope = await s.eval(`
+      const sub = () => document.querySelector('.page-sub')?.textContent.trim()
+      const seg = [...document.querySelectorAll('.page-head .seg button')]
+      const week = seg.find(b => /this week/i.test(b.textContent))
+      const day = seg.find(b => /this day/i.test(b.textContent))
+      if (!week || !day) return { err: 'no day/week scope control on Activity' }
+      const onDay = sub()
+      week.click(); await new Promise(r => setTimeout(r, 700))
+      const onWeek = sub()
+      // The table below stays on one day whatever the toggle says, so it has
+      // to name that day rather than let the reader assume it followed.
+      const table = [...document.querySelectorAll('.card')].find(
+        c => /recorded sessions/i.test(c.querySelector('.card-title')?.textContent || '')
+      )
+      const tableHint = table?.querySelector('.hint')?.textContent.trim()
+      day.click(); await new Promise(r => setTimeout(r, 500))
+      return { onDay, onWeek, back: sub(), tableHint }
+    `)
+    scope.err ? fail('the Activity scope control retitles the page', scope.err)
+      : scope.onWeek && scope.onWeek !== scope.onDay && scope.back === scope.onDay &&
+        scope.tableHint && scope.onDay.startsWith(scope.tableHint.split(' · ')[0])
+        ? pass('the Activity scope control retitles the page', `${scope.onDay} ⇄ ${scope.onWeek}`)
+        : fail('the Activity scope control retitles the page', JSON.stringify(scope))
 
     // ── 11. Projects & rules ───────────────────────────────────────────────
     await clickTab(s, 'Projects')

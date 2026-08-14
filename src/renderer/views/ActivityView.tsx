@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import type { Bucket } from '../../core/aggregate'
 import { summarizeDay, summarizeWeek } from '../../core/aggregate'
 import { dayStartTs } from '../../core/day'
+import { rangeLabel } from '../../core/range'
 import { Breakdown } from '../components/Charts'
 import { Empty } from '../components/Empty'
 import { RefreshButton } from '../components/RefreshButton'
@@ -74,15 +75,37 @@ export function ActivityView({ app }: { app: OpenTimeState }) {
   const categories = scope === 'day' ? summary.byCategory : week.byCategory
   const apps = scope === 'day' ? summary.byApp : weekApps
 
+  const dayLabel = longDate(dayStartTs(day.dayKey, settings.dayStartHour))
+  /*
+   * The scope control moves the two breakdowns onto the week, so the subtitle
+   * has to move with them. Left on the day it flatly contradicted the numbers
+   * underneath it — a header reading "Friday · 20 recorded sessions" above a
+   * chart totalling the whole week.
+   */
+  const weekKeys = app.week.map((d) => d.dayKey).filter(Boolean)
+  const weekSessions = app.week.reduce((sum, d) => sum + d.sessions.length, 0)
+  const scoped =
+    scope === 'day' || weekKeys.length === 0
+      ? { title: dayLabel, count: day.sessions.length, unit: 'recorded sessions' }
+      : {
+          title: rangeLabel({
+            kind: 'week',
+            fromKey: weekKeys[0],
+            toKey: weekKeys[weekKeys.length - 1],
+          }),
+          count: weekSessions,
+          unit: `recorded sessions over ${weekKeys.length} days`,
+        }
+
   return (
     <>
       <div className="page-head">
         <div>
           <h1 className="page-title">Activity</h1>
           <p className="page-sub">
-            {longDate(dayStartTs(day.dayKey, settings.dayStartHour))}
+            {scoped.title}
             <span className="sep">·</span>
-            {day.sessions.length} recorded sessions
+            {scoped.count} {scoped.unit}
           </p>
         </div>
         <div className="row">
@@ -111,9 +134,13 @@ export function ActivityView({ app }: { app: OpenTimeState }) {
         </div>
 
         <div className="card">
+          {/* The table is always one day, whatever the breakdowns are scoped
+              to — a week of unfolded rows is a scroll, not a record. So it
+              names its day rather than leaving the reader to assume it
+              followed the toggle. */}
           <h2 className="card-title">
             Recorded sessions
-            <span className="hint">Every row exactly as it is stored</span>
+            <span className="hint">{dayLabel} · every row exactly as it is stored</span>
           </h2>
           {day.sessions.length ? (
             <div className="session-table">

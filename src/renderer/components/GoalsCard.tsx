@@ -8,12 +8,21 @@ import { duration } from '../lib/format'
 import { Empty } from './Empty'
 import { IconEmptyRule } from './Icons'
 
-const STATE_COPY: Record<GoalProgress['state'], { label: string; tone: string }> = {
-  met: { label: 'Met', tone: 'good' },
-  'on-track': { label: 'On track', tone: 'neutral' },
-  behind: { label: 'Behind', tone: 'warn' },
-  'at-risk': { label: 'Running hot', tone: 'warn' },
-  exceeded: { label: 'Over', tone: 'bad' },
+/**
+ * The pill each goal state wears, named as the class it renders.
+ *
+ * "Behind" and "Running hot" are cautions and take amber; only a ceiling goal
+ * actually blown past takes the red that distracting time owns. They shared one
+ * class while amber resolved to nothing, so every state below "on track" looked
+ * equally like a failure — which is the opposite of what a tracker with no
+ * streaks is for.
+ */
+const STATE_COPY: Record<GoalProgress['state'], { label: string; pill: string }> = {
+  met: { label: 'Met', pill: 'info' },
+  'on-track': { label: 'On track', pill: '' },
+  behind: { label: 'Behind', pill: 'warn' },
+  'at-risk': { label: 'Running hot', pill: 'warn' },
+  exceeded: { label: 'Over', pill: 'danger' },
 }
 
 function hoursLabel(seconds: number): string {
@@ -90,9 +99,7 @@ export const GoalsCard = memo(function GoalsCard({
               <div className="goal-row" key={p.goal.id}>
                 <div className="goal-head">
                   <span className="goal-name">{p.goal.name}</span>
-                  <span className={`pill ${copy.tone === 'good' ? 'info' : copy.tone === 'warn' || copy.tone === 'bad' ? 'warn' : ''}`}>
-                    {copy.label}
-                  </span>
+                  <span className={`pill ${copy.pill}`}>{copy.label}</span>
                 </div>
                 <div className="meter">
                   <i
