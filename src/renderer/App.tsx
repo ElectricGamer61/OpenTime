@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { BrandMark, TitleWordmark } from './components/Brand'
 import { Empty } from './components/Empty'
@@ -241,6 +242,14 @@ function FocusButton({ app, onStart }: { app: OpenTimeState; onStart(): void }) 
   )
 }
 
+const WORKSPACE_MENU_WIDTH = 264
+/**
+ * Kept off the window edge so the card never looks clipped. Matches the rail's
+ * own padding, so at any ordinary width the card lines up with its trigger and
+ * the clamp only bites on a window too narrow to hold it.
+ */
+const WORKSPACE_MENU_MARGIN = 8
+
 /**
  * The workspace switcher.
  *
@@ -252,11 +261,37 @@ function FocusButton({ app, onStart }: { app: OpenTimeState; onStart(): void }) 
 function Workspace({ app }: { app: OpenTimeState }) {
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  // Anchored before paint, for the same reason EntryPopover is: a card that
+  // appears at 0,0 and then jumps under the button reads as a glitch.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null)
+      return
+    }
+    const place = () => {
+      const button = wrap.current?.getBoundingClientRect()
+      if (!button) return
+      const width = menu.current?.offsetWidth ?? WORKSPACE_MENU_WIDTH
+      const height = menu.current?.offsetHeight ?? 160
+      const edge = WORKSPACE_MENU_MARGIN
+      setPos({
+        top: Math.min(button.bottom + 6, Math.max(edge, window.innerHeight - height - edge)),
+        left: Math.max(edge, Math.min(button.left, window.innerWidth - width - edge)),
+      })
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [open])
 
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!wrap.current?.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (!wrap.current?.contains(target) && !menu.current?.contains(target)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
@@ -284,27 +319,49 @@ function Workspace({ app }: { app: OpenTimeState }) {
         <IconChevronDown className="workspace-caret" />
       </button>
 
-      {open ? (
-        <div className="workspace-menu" role="dialog" aria-label="Workspace">
-          <div className="workspace-menu-head">This workspace is a folder on this machine.</div>
-          <div className="workspace-path" title={app.dataDirectory}>
-            {app.dataDirectory}
-          </div>
-          <button
-            className="workspace-action"
-            onClick={() => {
-              void app.revealDataFolder()
-              setOpen(false)
-            }}
-          >
-            <IconFolderOpen size={15} />
-            Open data folder
-          </button>
-          <div className="workspace-menu-foot">
-            OpenTime v{app.appVersion} · {app.platform}
-          </div>
-        </div>
-      ) : null}
+      {/*
+       * Portalled to the body, like every other overlay in the app. The rail is
+       * `overflow: hidden` — it has to be, so the collapse animation does not
+       * spill — and the card is wider than the rail, so rendered in place it was
+       * sliced off mid-sentence at the rail's right edge. Fixed positioning is
+       * viewport-relative only outside the view's transform; see EntryPopover.
+       */}
+      {open
+        ? createPortal(
+            <div
+              className="workspace-menu"
+              ref={menu}
+              role="dialog"
+              aria-label="Workspace"
+              style={{
+                width: WORKSPACE_MENU_WIDTH,
+                top: pos?.top ?? -9999,
+                left: pos?.left ?? -9999,
+              }}
+            >
+              <div className="workspace-menu-head">
+                This workspace is a folder on this machine.
+              </div>
+              <div className="workspace-path" title={app.dataDirectory}>
+                {app.dataDirectory}
+              </div>
+              <button
+                className="workspace-action"
+                onClick={() => {
+                  void app.revealDataFolder()
+                  setOpen(false)
+                }}
+              >
+                <IconFolderOpen size={15} />
+                Open data folder
+              </button>
+              <div className="workspace-menu-foot">
+                OpenTime v{app.appVersion} · {app.platform}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   )
 }
