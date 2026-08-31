@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "description": "OpenTime \u2014 a lean, local-first automatic time tracker for Windows and macOS.",
   "private": true,
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "OpenTime",
   "main": "dist/main/main.js",
   "scripts": {
@@ -51,7 +51,8 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "OpenTime-${version}-setup.${ext}"
+      "artifactName": "OpenTime-${version}-setup.${ext}",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,

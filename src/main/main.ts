@@ -14,6 +14,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   Notification,
@@ -226,6 +227,38 @@ function buildTrayMenu(): void {
     ? ` until ${new Date(status.pausedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     : ''
   tray.setToolTip(status.paused ? `OpenTime — paused${until}` : 'OpenTime — tracking')
+}
+
+function toggleWindow(): void {
+  if (mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized()) {
+    mainWindow.hide()
+  } else {
+    showWindow()
+  }
+}
+
+function togglePause(): void {
+  if (!tracker) return
+  if (tracker.status.paused) tracker.resume()
+  else tracker.pause()
+  buildTrayMenu()
+}
+
+/**
+ * A solo-user app is more often driven from the keyboard than the tray. These
+ * two cover the only actions worth doing without first bringing the window
+ * forward: show/hide it, and pause tracking for something private without
+ * hunting for the tray icon. Registration can fail (another app already holds
+ * the combination, or the desktop session does not support global hotkeys at
+ * all) — same "degrade, do not crash" treatment as the tray itself.
+ */
+function registerGlobalShortcuts(): void {
+  try {
+    globalShortcut.register('CommandOrControl+Alt+O', toggleWindow)
+    globalShortcut.register('CommandOrControl+Alt+P', togglePause)
+  } catch (err) {
+    console.error('[main] global shortcuts unavailable:', err)
+  }
 }
 
 // ── Data helpers ─────────────────────────────────────────────────────────────
@@ -929,6 +962,7 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     tracker.start()
+    registerGlobalShortcuts()
 
     // Come back promptly on wake/unlock instead of waiting out the heartbeat.
     powerMonitor.on('resume', () => tracker.wake())
@@ -950,6 +984,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!storage || quitting) return
     quitting = true
     event.preventDefault()
+    globalShortcut.unregisterAll()
     tracker?.stop()
     // Drain before flushing: `stop()` starts the final write, and flushing a
     // store the last session has not reached yet would lose it.
