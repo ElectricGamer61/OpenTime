@@ -31,6 +31,38 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path release/win-unpacked/* -DestinationPath release/OpenTime-win-unpacked.zip
 
+      # Proves the installer isn't just a build artifact: silently installs it
+      # on this real Windows host, launches the installed exe with an isolated
+      # user-data dir, and fails the job if it exits early or never writes
+      # anything to storage.
+      - name: Install and launch the packaged app
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release\*.exe | Select-Object -First 1
+          Write-Host "Installing $($installer.Name) silently..."
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+
+          $exePath = Join-Path $env:LOCALAPPDATA "Programs\OpenTime\OpenTime.exe"
+          if (-not (Test-Path $exePath)) {
+            throw "Installed exe not found at $exePath"
+          }
+
+          $userData = Join-Path $env:TEMP "opentime-verify"
+          $proc = Start-Process -FilePath $exePath -ArgumentList "--user-data-dir=$userData","--disable-gpu" -PassThru
+          Start-Sleep -Seconds 10
+
+          if ($proc.HasExited) {
+            throw "OpenTime.exe exited early with code $($proc.ExitCode)"
+          }
+          Write-Host "OpenTime.exe is running (PID $($proc.Id))"
+          Stop-Process -Id $proc.Id -Force
+
+          $written = Get-ChildItem -Path $userData -Recurse -ErrorAction SilentlyContinue
+          if (-not $written) {
+            throw "Installed app never wrote anything to its user-data dir"
+          }
+          Write-Host "Confirmed the installed app wrote $($written.Count) file(s)/dir(s) to its user-data dir"
+
       # electron-builder's NSIS step needs a real Windows host (it needs Wine
       # everywhere else); this runner is that host. Releases are used instead
       # of actions/upload-artifact because the repo's Actions artifact quota
