@@ -8,6 +8,10 @@ focus score — with your calendar overlaid beside it. No timers to start. No
 screenshots. No account, no server, no subscription: everything stays in a folder
 on your machine that you can open, export, back up or delete.
 
+Two global shortcuts work from anywhere, window or not: `Ctrl/Cmd+Alt+O` shows
+or hides it, `Ctrl/Cmd+Alt+P` toggles pause — the tray menu has both too, plus
+timed pauses (15/30/60 minutes, or until you resume).
+
 When you want to declare rather than observe, start a **focus session**: name the
 work, pick a length, optionally play an ambient bed, and it lands on the timeline
 as one block when you stop.
@@ -101,6 +105,16 @@ The ambient beds are synthesised on your machine from filtered noise. There are
 no audio files in the bundle and nothing is streamed.
 
 ![Starting a focus session](docs/screenshots/focus.png)
+
+**Music timer.** Background listening with a countdown, separate from a focus
+session because it has no consequence for your tracked time at all — pick a
+track (lo-fi, whale song, alpha waves, or an original classical-style motif),
+pick a length or leave it open-ended, and it plays until you stop it. Three of
+the four tracks are generated on your machine the same way the ambient beds
+are; the one real recording is a public-domain NOAA field recording, bundled
+locally with its source and license on record in
+[`docs/audio-licenses.md`](docs/audio-licenses.md). A focus session and a
+music timer can run at once.
 
 **Reports over any range.** Week, month, quarter, year, or two dates you pick.
 Stepping is by the calendar — the month before March is February, not thirty days
@@ -420,6 +434,19 @@ Notes for a real release:
 - **The native capture module is per-platform.** `@miniben90/x-win` ships
   prebuilt binaries; build each installer on (or cross-build for) its target and
   verify the `.node` binary is present in the packaged app.
+- **Building the NSIS installer on Linux needs Wine.** `npm run package:win`
+  produces a real `release/win-unpacked/OpenTime.exe` on any host, but wrapping
+  it into `OpenTime-<version>-setup.exe` invokes `nsis-resources`, which
+  electron-builder can only run through Wine when the host OS is not Windows.
+  Without Wine (no `sudo` in a sandboxed environment, say), `signAndEditExecutable:
+  false` in `package.json`'s `build.win` still lets the unpacked app build to
+  completion — icon/version-resource stamping is skipped, everything else is
+  identical — but the NSIS step itself fails with `wine is required`. Build the
+  installer on Windows, on a Linux host with Wine installed, or in CI. `win-unpacked`
+  was verified end to end this way: launched directly under WSL2 (the packaged
+  `.exe`, not `electron .`, with `--user-data-dir` pointed outside the real
+  profile), it booted, detected capture was unavailable, seeded gated demo data,
+  and wrote real sharded day files through the same storage path dev mode uses.
 - **Auto-update is not wired up.** For an open project the natural choice is
   `electron-updater` against public GitHub Releases; v0 deliberately ships
   without it rather than with a feed only the author can publish to.
@@ -432,7 +459,7 @@ Notes for a real release:
 npm test
 ```
 
-260 tests, node environment, no Electron and no display required:
+344 tests, node environment, no Electron and no display required:
 
 | Suite | Covers |
 |---|---|
@@ -452,7 +479,11 @@ npm test
 | `calendar.test.ts` | OAuth URL construction, refresh margin, event mapping, revoked grants, network and malformed-response failures |
 | `demo.test.ts` | the demo generator produces real, non-overlapping, deterministic days |
 | `focus.test.ts` | sealing a focus session: boundary splits, no time lost or duplicated, gap filling, idempotent re-seal |
+| `music.test.ts` | timer construction, track validation, progress/countdown/overrun arithmetic, open-ended timers |
 | `range.test.ts` | calendar month/quarter/year arithmetic, custom-range clamping, DST-safe enumeration, the month grid |
+| `entries.test.ts` | folding adjacent sessions into calendar entries, lane assignment, focus-session grouping |
+| `palette.test.ts` | category-to-colour mapping, contrast-safe labels, edge-bar colour, light/dark RGB conversion |
+| `styles.test.ts` | design-token integrity: no self-referencing `light-dark()` tokens, no undefined token reads, no invalid `auto-fit` grids |
 
 Those cover the engine. The *product* is covered by a second suite:
 
@@ -464,7 +495,7 @@ npm run test:e2e
 directory and drives the renderer over the Chrome DevTools Protocol the way a
 person would — clicking tabs, clicking timeline blocks, ctrl-clicking to merge,
 typing into the inspector, flipping the theme — asserting through the same IPC
-surface the UI uses. 45 checks, and it writes a screenshot of each view beside
+surface the UI uses. 56 checks, and it writes a screenshot of each view beside
 `results.json` so a run can be looked at as well as read.
 
 The tracker tests drive the engine at its real polling cadence rather than in
@@ -527,4 +558,7 @@ language, scoring model and implementation here are original.
 
 ---
 
-MIT licensed.
+Apache License 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Every
+bundled dependency is MIT; the one non-original asset (a public-domain NOAA
+recording used by the Music timer) is documented separately in
+[`docs/audio-licenses.md`](docs/audio-licenses.md).

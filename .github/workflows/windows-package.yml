@@ -1,0 +1,83 @@
+name: Windows Package
+
+on:
+  push:
+    branches:
+      - fm/opentime-finish-packaging
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  package-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run package:win
+
+      - name: Zip the unpacked build
+        shell: pwsh
+        run: Compress-Archive -Path release/win-unpacked/* -DestinationPath release/OpenTime-win-unpacked.zip
+
+      # Proves the installer isn't just a build artifact: silently installs it
+      # on this real Windows host, launches the installed exe with an isolated
+      # user-data dir, and fails the job if it exits early or never writes
+      # anything to storage.
+      - name: Install and launch the packaged app
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release\*.exe | Select-Object -First 1
+          Write-Host "Installing $($installer.Name) silently..."
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+
+          $exePath = Join-Path $env:LOCALAPPDATA "Programs\OpenTime\OpenTime.exe"
+          if (-not (Test-Path $exePath)) {
+            throw "Installed exe not found at $exePath"
+          }
+
+          $userData = Join-Path $env:TEMP "opentime-verify"
+          $proc = Start-Process -FilePath $exePath -ArgumentList "--user-data-dir=$userData","--disable-gpu" -PassThru
+          Start-Sleep -Seconds 10
+
+          if ($proc.HasExited) {
+            throw "OpenTime.exe exited early with code $($proc.ExitCode)"
+          }
+          Write-Host "OpenTime.exe is running (PID $($proc.Id))"
+          Stop-Process -Id $proc.Id -Force
+
+          $written = Get-ChildItem -Path $userData -Recurse -ErrorAction SilentlyContinue
+          if (-not $written) {
+            throw "Installed app never wrote anything to its user-data dir"
+          }
+          Write-Host "Confirmed the installed app wrote $($written.Count) file(s)/dir(s) to its user-data dir"
+
+      # electron-builder's NSIS step needs a real Windows host (it needs Wine
+      # everywhere else); this runner is that host. Releases are used instead
+      # of actions/upload-artifact because the repo's Actions artifact quota
+      # is exhausted — a GitHub Release has its own storage and is also the
+      # simplest thing to link to from a PR.
+      - name: Publish installer as a GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="win-build-${{ github.run_number }}"
+          gh release create "$tag" \
+            --repo "${{ github.repository }}" \
+            --title "Windows build $tag ($(git rev-parse --short HEAD))" \
+            --notes "Automated Windows packaging build from \`${{ github.ref_name }}\` @ ${{ github.sha }}. Contains the NSIS installer and a zipped unpacked build." \
+            --prerelease \
+            release/*.exe release/OpenTime-win-unpacked.zip

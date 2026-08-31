@@ -115,6 +115,29 @@ const SHOTS = [
   { name: 'dashboard-focus', steps: [click('.nav-item', 'Dashboard')] },
   { name: 'settings-privacy', steps: [click('.nav-item', 'Settings'), click('.settings-nav button', 'Privacy')] },
   { name: 'goals', steps: [click('.nav-item', 'Goals')] },
+  { name: 'music-setup', steps: [click('.music-start')] },
+  {
+    name: 'music-running',
+    steps: [click('.music-start'), click('.focus-beds button', 'Whale'), click('.focus-sheet-foot .btn.primary')],
+  },
+  {
+    name: 'music-track-menu',
+    steps: [
+      click('.music-start'),
+      click('.focus-sheet-foot .btn.primary'),
+      click('.focus-sound-wrap .icon-btn'),
+    ],
+  },
+  {
+    // Both docks running at once, to check they stack rather than overlap.
+    name: 'music-and-focus',
+    steps: [
+      click('.focus-start'),
+      click('.focus-sheet-foot .btn.primary'),
+      click('.music-start'),
+      click('.focus-sheet-foot .btn.primary'),
+    ],
+  },
 ]
 
 app.disableHardwareAcceleration()

@@ -29,6 +29,7 @@ Start with `README.md` — it documents the stack, architecture, performance rat
 - `npm run typecheck` — covers `src/` **and** `tests/`.
 - To exercise the **main process** end to end, run `npx electron . --user-data-dir=<tmp> --disable-gpu`. Always pass `--user-data-dir`: without it the app reads and migrates the real `~/.config/OpenTime` store. WSL needs `--disable-gpu --no-sandbox` (and often `--in-process-gpu`) or Electron aborts at boot with `GPU process isn't usable`.
 - The browser fallback client in `src/renderer/state/client.ts` implements the *whole* `OpenTimeApi`. Adding an IPC method means adding it there too, or the screenshot/preview path breaks.
+- **`npm run package:win` on Linux builds `release/win-unpacked/OpenTime.exe` fine but cannot wrap it into the NSIS installer without Wine** — that step shells out to `nsis-resources`, which needs Wine on any non-Windows host, `sudo apt install wine` or not. `signAndEditExecutable: false` in `package.json`'s `build.win` avoids a *second*, unrelated Wine requirement (resource/icon stamping) so the unpacked build still completes when Wine is unavailable, but does not touch the NSIS step. Under WSL2, `win-unpacked/OpenTime.exe` is a real Windows PE binary you can launch directly (`chmod +x` it first) — pass a Windows-style `--user-data-dir` (e.g. `C:\Users\<name>\AppData\Local\Temp\<tmp>`, not a `/mnt/c/...` path) since the flag is parsed by the Windows Node.js inside that process. `.github/workflows/windows-package.yml` builds the real NSIS installer on `windows-latest`, silently installs it and launches the result to prove it actually boots, then publishes both the installer and a zipped `win-unpacked` as a GitHub Release rather than an Actions artifact (those are quota-limited on this repo). It fires on push to `fm/opentime-finish-packaging` or manual dispatch — retarget `on.push.branches` once that work lands on `main`.
 
 `npx electron scripts/screenshot.cjs <outDir>` boots the real Electron shell and writes a PNG per tab. It intentionally loads the renderer *without* the preload bridge, so the renderer falls back to its self-contained demo client in `src/renderer/state/client.ts` — full UI, no tracking engine required. Run `npx electron scripts/screenshot.cjs docs/screenshots` after visual changes; the filenames it writes are the ones README links to.
 
@@ -71,6 +72,26 @@ Column assignment is by *label*, not by collision: OpenTime's sessions never ove
 Avoid `backdrop-filter` on opaque surfaces: it buys nothing visually and its extra composited layer renders a frame behind the rest of the shell during a view transition. The sticky page header uses an opaque fading gradient instead.
 
 **The timeline must never become a barcode.** A day of quick context switches produces runs of sub-20px blocks: no label fits, none is clickable, and the whole hour reads as a rendering fault. `Timeline.tsx` folds any run of neighbours below `TINY_PX` into one labelled "N short blocks" band that expands on click, and draws a lone short block as a rounded tick rather than an empty tinted box. Keep the clustering threshold equal to the labelling threshold — a gap between them re-creates the unlabelled-box case that started this.
+
+## Branch archaeology
+
+`fm/opentime-full-rize-parity` (local only) still holds unmerged work that
+predates the calendar rebuild (`3c43726`) — six commits, diverged from an
+older `main` before `RangeView`/`WeekView`/`TodayView` were replaced by the
+current `CalendarView`/`DayGrid`/`EntryPopover` architecture. Its renderer
+changes are not portable as-is. Three pieces are main-process-only or
+storage-only, still address real gaps in the current "not built yet" list,
+and are the reason the branch has not been deleted: a full `Updater` class
+(`src/main/updater.ts`, opt-in, GitHub Releases, degrade-not-crash — auto-
+update), a Google Calendar write-back path, and a soak-test harness
+(`scripts/soak.mjs` + `tests/soak.test.ts`). Reimplementing against current
+`main` rather than attempting a mechanical merge is the right approach given
+how far the fork point has drifted. Every other `fm/opentime-*` branch that
+existed alongside it turned out to be either checked out in a sibling
+worktree (leave those alone — another session's workspace) or, for five
+`origin/fm/opentime-*` branches, byte-identical to a commit already
+squash-merged into `main`; those five were deleted 2026-08-31 after
+confirming `git diff <branch> <mainCommit>` was empty for each.
 
 ## Maintaining this file
 

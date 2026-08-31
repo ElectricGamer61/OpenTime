@@ -1,0 +1,14 @@
+OpenTime
+Copyright 2026 OpenTime contributors
+
+This product is licensed under the Apache License, Version 2.0. See LICENSE
+for the full text.
+
+Third-party dependencies retain their own licenses (all MIT for the code
+bundled into the packaged app: Electron, React, React DOM, and the optional
+native module @miniben90/x-win). None require reproduction of a NOTICE text
+beyond their own package metadata.
+
+One bundled audio asset is not original work: src/renderer/assets/audio/whale.wav
+is a public-domain NOAA recording (17 U.S.C. §105). Source, licence and the
+modifications made are recorded in docs/audio-licenses.md.

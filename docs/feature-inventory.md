@@ -12,6 +12,21 @@ the product existing.
 
 Status legend: **Shipped** · **Partial** · **Deferred** · **Won't build**
 
+## Who this is for
+
+OpenTime is built for one person tracking their own time, not a team, and not
+an organisation buying seats. That is a scope decision, not a resource
+constraint, and it is why several conventional category features are in the
+"Not built on purpose" table below rather than the roadmap: team dashboards,
+manager visibility, accounts, and cloud sync all exist to serve someone other
+than the person doing the work. Calendar integration is Google Calendar only,
+for the same reason a second capture backend or a second calendar provider
+would be: it is surface area that serves an audience broader than the one
+person this product is for, at the cost of the local-first, no-account, no-
+network-by-default architecture that is the actual point. A feature request
+that would compromise any of those properties to serve a team or an
+organisation is out of scope for this product, not merely deferred.
+
 ---
 
 ## 1. Automatic app and window capture
@@ -398,7 +413,40 @@ than "it reads which window has focus". Post-session self-rating is also absent 
 it exists in this product class to train a focus-detection model, and OpenTime
 sends nothing anywhere to train anything.
 
-## 19. Tray and timed pause
+## 19. Music timer
+
+| | |
+|---|---|
+| Status | **Shipped** |
+| Where | `src/core/music.ts`, `src/renderer/components/MusicTimer.tsx`, `src/renderer/lib/music.ts` |
+
+Background listening with a countdown: pick a track, pick a length (or
+"Until stopped"), and a dock floats over the app the same way the focus dock
+does. Four tracks — lo-fi, whale song, alpha waves, classical — chosen to
+answer a specific ask for "concentration audio" without reversing the reason
+Focus's ambient beds are synthesised (see §18): see
+[`docs/audio-licenses.md`](../docs/audio-licenses.md) for exactly what each
+track is and, for the one real recording, where it came from and under what
+license.
+
+**Deliberately not a variant of a focus session.** A focus session is a claim
+over tracked time and has to survive the window reloading, so it lives in the
+main process. A music timer has no consequence for the timeline at all — it
+never seals anything, never touches a day's sessions, carries no category —
+so it lives entirely in the renderer. Closing the window or reloading just
+stops the sound; there is nothing to lose because nothing was ever recorded.
+The two can run at once — the docks are positioned to stack rather than
+overlap when they do.
+
+Three of the four tracks are pre-rendered once through an `OfflineAudioContext`
+into a short `AudioBuffer` that then loops exactly like the Focus ambient
+beds — chosen over a live scheduler so a background window cannot desync or
+drop a beat while throttled. The alpha track is genuinely live (a beat
+frequency cannot be pre-rendered into a short seamless loop), and the one real
+recording is fetched and decoded once, from a bundled local asset — same
+origin, no CSP change.
+
+## 20. Tray and timed pause
 
 | | |
 |---|---|
@@ -409,6 +457,15 @@ Pause for 15/30/60 minutes or until resumed, from the tray. A timed pause exists
 because the alternative people actually reach for is quitting the app — and then
 forgetting to start it again and losing the afternoon.
 
+Two global shortcuts back the same two actions from the keyboard, registered in
+`registerGlobalShortcuts()`: `Ctrl/Cmd+Alt+O` toggles the window, `Ctrl/Cmd+Alt+P`
+toggles pause. Both are the kind of action that needs no window in front of you
+to make sense of — anything that needed input (starting a Focus session with a
+goal, for instance) stays a window action. Registration is best-effort: another
+app already holding the combination, or a desktop session with no global-hotkey
+support, degrades to "no shortcut" rather than failing to boot, the same
+treatment the tray itself gets.
+
 ---
 
 ## Deferred, with reasons
@@ -416,12 +473,12 @@ forgetting to start it again and losing the afternoon.
 | Item | Why it is not built |
 |---|---|
 | **SQLite backend** | The sharded store fixed the durability and memory problems SQLite was wanted for. It would now buy indexed cross-day queries — worth doing when a reporting view needs them, not before. |
-| **Auto-update** | Natural choice is `electron-updater` against public GitHub Releases. Shipping an update feed only the author can publish to is worse than shipping none. |
+| **Auto-update** | Natural choice is `electron-updater` against public GitHub Releases. Shipping an update feed only the author can publish to is worse than shipping none. A working, opt-in `Updater` class exists on the unmerged `fm/opentime-full-rize-parity` branch (main-process only, not renderer-tied) — see AGENTS.md's Branch archaeology note before rebuilding this from scratch. |
 | **Codesigning and notarisation** | Required before macOS distribution; needs an Apple Developer ID. |
-| **Calendar write-back** | Scope is already selectable. Needs a clear model for what OpenTime is allowed to put on someone's calendar. |
+| **Calendar write-back** | Scope is already selectable. Needs a clear model for what OpenTime is allowed to put on someone's calendar. A prototype exists on `fm/opentime-full-rize-parity` (see AGENTS.md), but its UI half predates the calendar rebuild and is not directly portable. |
 | **Accessibility audit** | Keyboard order is reasonable but unaudited. |
 | **Update check** | Still none, and deliberately so — see Auto-update above. A checker that only points at GitHub Releases would also be the app's first unsolicited network call, which §12 rules out. |
-| **Long-run soak test** | The engine is designed for a fixed memory ceiling and the store now has a bounded footprint, but neither has been run for days on real hardware. |
+| **Long-run soak test** | The engine is designed for a fixed memory ceiling and the store now has a bounded footprint, but neither has been run for days on real hardware. A `scripts/soak.mjs` + `tests/soak.test.ts` harness exists on `fm/opentime-full-rize-parity` (see AGENTS.md) against an older `Tracker` shape; would need rechecking against the current one, not a straight port. |
 
 ## Not built on purpose
 

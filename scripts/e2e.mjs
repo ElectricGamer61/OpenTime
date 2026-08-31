@@ -540,6 +540,46 @@ async function main() {
         ? pass('run a focus session end to end', `started, extended by 15m, ended with "${focus.reported}"`)
         : fail('run a focus session end to end', JSON.stringify(focus))
 
+    // ── 7b. A music timer, start to finish ─────────────────────────────────
+    // Unlike a focus session this never touches `window.opentime` at all — it
+    // is renderer-only by design — so the check is purely DOM-level: start
+    // it, switch track mid-run without losing the countdown, extend it, stop
+    // it, and confirm it leaves nothing behind (no completion sheet, unlike
+    // focus, because there is nothing to report).
+    const music = await s.eval(`${REACT_SET}
+      const start = [...document.querySelectorAll('.rail button')].find(b => /music timer/i.test(b.textContent))
+      if (!start) return { err: 'no Music timer button on the rail' }
+      start.click(); await new Promise(r => setTimeout(r, 600))
+      const sheet = document.querySelector('.focus-sheet')
+      if (!sheet) return { err: 'music setup sheet did not open' }
+      const lofi = [...sheet.querySelectorAll('.focus-bed')].find(b => /Lo-fi/.test(b.textContent))
+      if (!lofi) return { err: 'no Lo-fi track option' }
+      lofi.click(); await new Promise(r => setTimeout(r, 150))
+      const go = [...sheet.querySelectorAll('.focus-sheet-foot button')].find(b => /^Start$/.test(b.textContent.trim()))
+      if (!go) return { err: 'no start button on the music sheet' }
+      go.click(); await new Promise(r => setTimeout(r, 1200))
+      const dock = document.querySelector('.music-dock')
+      if (!dock) return { err: 'music dock did not appear after starting' }
+      const labelBefore = dock.querySelector('.focus-dock-label')?.textContent
+      const extend = [...dock.querySelectorAll('button')].find(b => /15m/.test(b.textContent))
+      extend.click(); await new Promise(r => setTimeout(r, 400))
+      const picker = dock.querySelector('.focus-sound-wrap .icon-btn')
+      picker.click(); await new Promise(r => setTimeout(r, 200))
+      const whale = [...document.querySelectorAll('.focus-sound-menu button')].find(b => /Whale song/.test(b.textContent))
+      if (!whale) return { err: 'no Whale song option in the track menu' }
+      whale.click(); await new Promise(r => setTimeout(r, 400))
+      const labelAfter = document.querySelector('.music-dock .focus-dock-label')?.textContent
+      const stop = [...document.querySelectorAll('.music-dock button')].find(b => /^Stop$/.test(b.textContent.trim()))
+      stop.click(); await new Promise(r => setTimeout(r, 500))
+      return { labelBefore, labelAfter,
+               closed: !document.querySelector('.music-dock'),
+               noReportSheet: !document.querySelector('.focus-sheet.done') }
+    `)
+    music.err ? fail('run a music timer end to end', music.err)
+      : music.labelBefore === 'Lo-fi' && music.labelAfter === 'Whale song' && music.closed && music.noReportSheet
+        ? pass('run a music timer end to end', `switched ${music.labelBefore} → ${music.labelAfter}, extended, stopped cleanly`)
+        : fail('run a music timer end to end', JSON.stringify(music))
+
     // ── 8. Activity: the raw record ────────────────────────────────────────
     await clickTab(s, 'Activity')
     await shoot(s, '03-activity.png')
