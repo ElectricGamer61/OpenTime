@@ -15,31 +15,10 @@
  */
 
 import type { AmbientBedId } from '../../core/types'
-
-/** Seconds of noise generated once and looped. Long enough to hide the seam. */
-const BUFFER_SECONDS = 5
+import { noiseSource } from './noise'
 
 /** Fades, in seconds. Anything shorter than this clicks. */
 const FADE = 0.6
-
-function fillWhite(data: Float32Array): void {
-  for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1
-}
-
-/**
- * Brown noise — a running sum of white, which rolls off at 6dB/octave.
- *
- * Kept rather than plain white for the low beds because white noise at low
- * volume still reads as hiss, and hiss is the thing people reach to turn off.
- */
-function fillBrown(data: Float32Array): void {
-  let last = 0
-  for (let i = 0; i < data.length; i += 1) {
-    const white = Math.random() * 2 - 1
-    last = (last + 0.02 * white) / 1.02
-    data[i] = last * 3.5
-  }
-}
 
 export interface AmbientEngine {
   /** Switch to a bed, or to `'silence'` to stop. Safe to call repeatedly. */
@@ -89,17 +68,6 @@ export function createAmbientEngine(): AmbientEngine {
     // into here is behind a click, so this is the moment it can be resumed.
     if (ctx.state === 'suspended') void ctx.resume()
     return { ctx, master }
-  }
-
-  const noiseSource = (audio: AudioContext, kind: 'white' | 'brown'): AudioBufferSourceNode => {
-    const buffer = audio.createBuffer(1, audio.sampleRate * BUFFER_SECONDS, audio.sampleRate)
-    const data = buffer.getChannelData(0)
-    if (kind === 'white') fillWhite(data)
-    else fillBrown(data)
-    const source = audio.createBufferSource()
-    source.buffer = buffer
-    source.loop = true
-    return source
   }
 
   /** Build one bed and return a handle that fades it out and tears it down. */

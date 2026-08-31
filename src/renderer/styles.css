@@ -3407,12 +3407,17 @@ select option {
 }
 
 .btn.focus-start,
+.btn.music-start,
 .focus-chip {
   width: 100%;
   justify-content: center;
   gap: 8px;
   padding-block: 9px;
   font-size: 12.5px;
+}
+
+.btn.music-start {
+  margin-top: 6px;
 }
 
 .app.rail-collapsed .rail-cta {
@@ -3422,6 +3427,7 @@ select option {
 /* Collapsed, the button is the icon and nothing else — the label is clipped
    away everywhere else in the rail for the same reason. */
 .app.rail-collapsed .btn.focus-start .nav-label,
+.app.rail-collapsed .btn.music-start .nav-label,
 .app.rail-collapsed .focus-chip .nav-label {
   display: none;
 }
@@ -3620,6 +3626,27 @@ select option {
   flex: 0 0 auto;
 }
 
+/* Stacked above where the focus dock sits, so the two can never overlap when
+   a focus session and a music timer are both running at once. */
+.music-dock {
+  bottom: 84px;
+}
+
+/* Stands in for the ring on an open-ended timer, which has no fraction to
+   draw — same footprint as `.focus-ring` so the dock does not reflow when a
+   timed track switches to "Until stopped". */
+.music-dock-mark {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+
 .focus-dock-text {
   display: grid;
   gap: 1px;
@@ -3741,6 +3768,18 @@ select option {
 
 .app.focus-running .grid-scroll {
   padding-bottom: 84px;
+}
+
+/* The music dock floats higher than the focus dock (see `.music-dock`) so the
+   two can stack, which means it alone — or both together — needs more
+   clearance than focus-running alone. Declared after `.focus-running` so it
+   wins on equal specificity when both classes are present at once. */
+.app.music-running .page {
+  padding-bottom: 160px;
+}
+
+.app.music-running .grid-scroll {
+  padding-bottom: 148px;
 }
 
 @keyframes dock-in {

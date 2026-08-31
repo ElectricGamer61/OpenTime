@@ -377,3 +377,16 @@ export function IconCheck(props: IconProps) {
     </Svg>
   )
 }
+
+// ── Music timer ──────────────────────────────────────────────────────────────
+
+/** Music — a pair of beamed notes, for the music timer. */
+export function IconMusic(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 16.5V6.5l10-2v10" />
+      <circle cx="7" cy="17.25" r="2.25" />
+      <circle cx="17" cy="15.25" r="2.25" />
+    </Svg>
+  )
+}

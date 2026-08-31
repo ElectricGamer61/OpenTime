@@ -15,13 +15,16 @@ import {
   IconFocus,
   IconFolder,
   IconFolderOpen,
+  IconMusic,
   IconPause,
   IconSettings,
   IconTarget,
   IconWeek,
 } from './components/Icons'
+import { MusicMode } from './components/MusicTimer'
 import { Onboarding } from './components/Onboarding'
 import { focusProgress } from '../core/focus'
+import { MUSIC_TRACKS, musicProgress, type ActiveMusicTimer } from '../core/music'
 import type { RangeKind } from '../core/range'
 import { clock, duration } from './lib/format'
 import type { OpenTimeState } from './state/useOpenTime'
@@ -75,6 +78,9 @@ export function App() {
   const [tab, setTab] = useState<Tab>('calendar')
   const [collapsed, setCollapsed] = useState(false)
   const [focusSetup, setFocusSetup] = useState(false)
+  const [musicSetup, setMusicSetup] = useState(false)
+  /** Mirrors `MusicMode`'s own state, purely so the rail button can show it running. */
+  const [musicActive, setMusicActive] = useState<ActiveMusicTimer | null>(null)
   /** Which range Reports opens on when the calendar sends you there. */
   const [reportRange, setReportRange] = useState<RangeKind>('week')
 
@@ -105,7 +111,7 @@ export function App() {
 
   return (
     <div
-      className={`app${collapsed ? ' rail-collapsed' : ''}${app.status?.focus ? ' focus-running' : ''}`}
+      className={`app${collapsed ? ' rail-collapsed' : ''}${app.status?.focus ? ' focus-running' : ''}${musicActive ? ' music-running' : ''}`}
     >
       {app.firstRun ? <Onboarding app={app} /> : null}
       <Titlebar app={app} onSettings={() => setTab('settings')} />
@@ -146,6 +152,7 @@ export function App() {
           </div>
 
           <FocusButton app={app} onStart={() => setFocusSetup(true)} />
+          <MusicButton active={musicActive} onStart={() => setMusicSetup(true)} />
           <RailFooter app={app} />
         </nav>
 
@@ -204,6 +211,7 @@ export function App() {
         onOpenChange={setFocusSetup}
         onOpenCalendar={() => setTab('calendar')}
       />
+      <MusicMode open={musicSetup} onOpenChange={setMusicSetup} onActiveChange={setMusicActive} />
     </div>
   )
 }
@@ -238,6 +246,47 @@ function FocusButton({ app, onStart }: { app: OpenTimeState; onStart(): void }) 
         <span className="nav-label">
           <b>{clock(progress.overrun ? progress.overrunSeconds : progress.remainingSeconds)}</b>
           {progress.overrun ? 'over' : 'left'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The way into the music timer. `active` is a mirror of `MusicMode`'s own
+ * state — the timer itself is renderer-local, not `app.status` — kept here
+ * purely so this button can show the countdown the same way `FocusButton`
+ * does rather than going quiet the moment something is actually running.
+ */
+function MusicButton({ active, onStart }: { active: ActiveMusicTimer | null; onStart(): void }) {
+  const now = useNow(1000)
+
+  if (!active) {
+    return (
+      <div className="rail-cta">
+        <button className="btn ghost music-start" onClick={onStart}>
+          <IconMusic size={16} />
+          <span className="nav-label">Music timer</span>
+        </button>
+      </div>
+    )
+  }
+
+  const progress = musicProgress(active, now)
+  const label = MUSIC_TRACKS.find((t) => t.id === active.track)?.label ?? active.track
+  return (
+    <div className="rail-cta">
+      <div className="focus-chip music-chip" title={label}>
+        <IconMusic size={16} />
+        <span className="nav-label">
+          {progress.openEnded ? (
+            <b>{clock(progress.elapsedSeconds)}</b>
+          ) : (
+            <>
+              <b>{clock(progress.overrun ? progress.overrunSeconds : progress.remainingSeconds)}</b>
+              {progress.overrun ? 'over' : 'left'}
+            </>
+          )}
         </span>
       </div>
     </div>
