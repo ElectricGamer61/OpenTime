@@ -117,25 +117,27 @@ jobs:
 
           $userData = Join-Path $env:TEMP "opentime-capture-check"
           $healthFile = Join-Path $userData "capture-health.json"
-          # Piping a GUI-subsystem exe's stdout through PowerShell proved
-          # unreliable here (two runs completed in well under a second with
-          # completely empty captured output, exit code included) — the app
-          # writes its diagnostic straight to a file instead so this check
-          # doesn't depend on stdio redirection working at all.
-          $out = & $exePath --user-data-dir=$userData --disable-gpu --print-capture-health 2>&1
-          $exitCode = $LASTEXITCODE
-          Write-Host "capture health process output: $out (exit $exitCode)"
+          # `& $exePath ... 2>&1` does not reliably wait for this GUI-subsystem
+          # exe or capture its output — three straight CI runs returned in well
+          # under a second with an empty stream AND a null exit code, regardless
+          # of what/how the app wrote. `Start-Process -Wait` is the pattern
+          # PowerShell actually blocks a GUI-subsystem child on; the app writes
+          # its diagnostic to a file rather than stdout so nothing here depends
+          # on stdio redirection working at all.
+          $proc = Start-Process -FilePath $exePath -ArgumentList "--user-data-dir=$userData","--disable-gpu","--print-capture-health" -PassThru -Wait
+          Write-Host "capture health process exit code: $($proc.ExitCode)"
 
           if (-not (Test-Path $healthFile)) {
-            throw "Installed app did not write $healthFile (exit ${exitCode}: $out)"
+            throw "Installed app did not write $healthFile (exit code $($proc.ExitCode))"
           }
-          $health = Get-Content $healthFile -Raw | ConvertFrom-Json
-          Write-Host "capture health file contents: $(Get-Content $healthFile -Raw)"
+          $healthRaw = Get-Content $healthFile -Raw
+          Write-Host "capture health file contents: $healthRaw"
+          $health = $healthRaw | ConvertFrom-Json
           if ($health.demo -ne $false) {
-            throw "Expected native capture, got: $out"
+            throw "Expected native capture, got: $healthRaw"
           }
           if ($health.adapter -notlike '*x-win*') {
-            throw "Expected the x-win adapter, got: $out"
+            throw "Expected the x-win adapter, got: $healthRaw"
           }
           Write-Host "Confirmed native capture is active in the installed app: $($health.adapter)"
 
