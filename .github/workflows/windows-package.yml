@@ -116,14 +116,21 @@ jobs:
           }
 
           $userData = Join-Path $env:TEMP "opentime-capture-check"
+          $healthFile = Join-Path $userData "capture-health.json"
+          # Piping a GUI-subsystem exe's stdout through PowerShell proved
+          # unreliable here (two runs completed in well under a second with
+          # completely empty captured output, exit code included) — the app
+          # writes its diagnostic straight to a file instead so this check
+          # doesn't depend on stdio redirection working at all.
           $out = & $exePath --user-data-dir=$userData --disable-gpu --print-capture-health 2>&1
           $exitCode = $LASTEXITCODE
-          Write-Host "capture health output: $out"
-          if ($exitCode -ne 0) {
-            throw "Installed app reported capture is unavailable (exit $exitCode): $out"
-          }
+          Write-Host "capture health process output: $out (exit $exitCode)"
 
-          $health = $out | Select-String -Pattern '^\{.*\}$' | Select-Object -Last 1 | ForEach-Object { $_.Line } | ConvertFrom-Json
+          if (-not (Test-Path $healthFile)) {
+            throw "Installed app did not write $healthFile (exit ${exitCode}: $out)"
+          }
+          $health = Get-Content $healthFile -Raw | ConvertFrom-Json
+          Write-Host "capture health file contents: $(Get-Content $healthFile -Raw)"
           if ($health.demo -ne $false) {
             throw "Expected native capture, got: $out"
           }

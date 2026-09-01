@@ -963,15 +963,17 @@ if (!app.requestSingleInstanceLock()) {
     // unpacked build cannot prove either way.
     if (process.argv.includes('--print-capture-health')) {
       const health = initCapture()
-      // `app.exit()` terminates immediately, without waiting for pending I/O.
-      // On Windows, a piped (non-TTY) stdout write is asynchronous, so a plain
-      // `console.log` followed by `app.exit()` is a race the write can lose —
-      // the process exits before the pipe flushes and the caller sees no
-      // output at all. Exiting from the write's own callback guarantees the
-      // bytes are on the pipe first.
-      process.stdout.write(`${JSON.stringify(health)}\n`, () => {
-        app.exit(health.demo ? 1 : 0)
-      })
+      // OpenTime.exe is a GUI-subsystem (not console-subsystem) binary. Even
+      // with output redirected by the launching shell, a write-then-`app.exit()`
+      // race (or the binary simply having no attached stdio) can lose the
+      // whole line on Windows — confirmed by two CI runs where this printed
+      // nothing at all despite completing in well under a second, unrelated
+      // to `app.exit()`'s own immediate-termination behavior. A file next to
+      // the rest of this run's data is unambiguous regardless of stdio.
+      const healthPath = path.join(app.getPath('userData'), 'capture-health.json')
+      await fs.writeFile(healthPath, JSON.stringify(health))
+      console.log(JSON.stringify(health))
+      app.exit(health.demo ? 1 : 0)
       return
     }
 
