@@ -104,36 +104,24 @@ export interface CaptureProbe {
 
 export type CaptureRemedy = 'macos-accessibility' | 'unsupported-session' | 'module-missing'
 
-/**
- * Probe the native module in a throwaway child process.
- *
- * This is not paranoia. `x-win` is a Rust addon, and on a session it cannot
- * read (Wayland, a headless container, WSL without an X server) it does not
- * throw — it *panics*, which aborts the host process. A panic unwinding through
- * napi is not catchable by `try/catch`, so probing in-process would mean the
- * app dies at boot on those systems instead of falling back.
- *
- * One `spawnSync` at startup, and only when native capture is on the table.
- */
-function probeNativeOutOfProcess(): { ok: boolean; error?: string; remedy?: CaptureRemedy } {
-  const script = `
-    try {
-      const xwin = require(${JSON.stringify('@miniben90/x-win')})
-      xwin.activeWindow()
-      process.exit(0)
-    } catch (err) {
-      process.stderr.write(String(err && err.message ? err.message : err))
-      process.exit(1)
-    }
-  `
-  const result = spawnSync(process.execPath, ['-e', script], {
-    // Run Electron's binary as a plain node process for the probe.
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    cwd: process.cwd(),
-    timeout: 10_000,
-    encoding: 'utf8',
-  })
+export interface ProbeResult {
+  ok: boolean
+  error?: string
+  remedy?: CaptureRemedy
+}
 
+/**
+ * Turn a failed probe's exit status/signal/stderr into the honest message and
+ * remedy shown in Settings. Split out from `probeNativeOutOfProcess` so the
+ * classification — the part that regressed silently if a new failure shape
+ * fell through to the generic message — is unit-testable without spawning a
+ * real process.
+ */
+export function classifyProbeFailure(result: {
+  status: number | null
+  signal: NodeJS.Signals | null
+  stderr: string
+}): ProbeResult {
   if (result.status === 0) return { ok: true }
   if (result.signal) {
     return {
@@ -151,6 +139,19 @@ function probeNativeOutOfProcess(): { ok: boolean; error?: string; remedy?: Capt
       remedy: 'module-missing',
     }
   }
+  // The module's file is present but the OS couldn't load it — on Windows this
+  // is almost always a missing Microsoft Visual C++ Redistributable, which the
+  // installer bundles but a build without that step (or a damaged install)
+  // will not have. Distinct from "not installed" because reinstalling the app
+  // package alone will not fix it; the redistributable is what's missing.
+  if (/is not a valid win32 application|specified module could not be found/i.test(stderr)) {
+    return {
+      ok: false,
+      error:
+        'the native window-capture module failed to load — a required system component (the Microsoft Visual C++ Redistributable) appears to be missing. Reinstalling OpenTime usually fixes this.',
+      remedy: 'module-missing',
+    }
+  }
   if (/panicked|Wayland|org\.gnome\.Shell/i.test(stderr)) {
     return {
       ok: false,
@@ -164,6 +165,38 @@ function probeNativeOutOfProcess(): { ok: boolean; error?: string; remedy?: Capt
     error: stderr.split('\n')[0] || 'native capture is unavailable here',
     remedy: 'unsupported-session',
   }
+}
+
+/**
+ * Probe the native module in a throwaway child process.
+ *
+ * This is not paranoia. `x-win` is a Rust addon, and on a session it cannot
+ * read (Wayland, a headless container, WSL without an X server) it does not
+ * throw — it *panics*, which aborts the host process. A panic unwinding through
+ * napi is not catchable by `try/catch`, so probing in-process would mean the
+ * app dies at boot on those systems instead of falling back.
+ *
+ * One `spawnSync` at startup, and only when native capture is on the table.
+ */
+function probeNativeOutOfProcess(): ProbeResult {
+  const script = `
+    try {
+      const xwin = require(${JSON.stringify('@miniben90/x-win')})
+      xwin.activeWindow()
+      process.exit(0)
+    } catch (err) {
+      process.stderr.write(String(err && err.message ? err.message : err))
+      process.exit(1)
+    }
+  `
+  const result = spawnSync(process.execPath, ['-e', script], {
+    // Run Electron's binary as a plain node process for the probe.
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    cwd: process.cwd(),
+    timeout: 10_000,
+    encoding: 'utf8',
+  })
+  return classifyProbeFailure(result)
 }
 
 /**

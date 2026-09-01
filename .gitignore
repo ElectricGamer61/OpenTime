@@ -6,3 +6,7 @@ release/
 
 # End-to-end run artifacts
 .e2e/
+
+# Windows CI-only: VC++ runtime DLLs copied in at packaging time, see
+# scripts/prepare-win-redist.mjs and .github/workflows/windows-package.yml
+build/win-redist/

@@ -350,6 +350,52 @@ describe('FileStorage bulk operations', () => {
   })
 })
 
+describe('FileStorage upgrade cleanup', () => {
+  it('starts a brand new store with no demo history and seeding opted out', async () => {
+    const storage = await open()
+    expect(storage.isEmpty()).toBe(true)
+    expect(storage.demoDays()).toEqual([])
+    expect(storage.getSettings().seedDemoWhenUnavailable).toBe(false)
+  })
+
+  it('removes demo days left by an older version on upgrade, keeping real history', async () => {
+    // Simulate a pre-upgrade store: demo history seeded by the old
+    // seed-by-default behaviour, alongside a real tracked day.
+    const seeded = await open()
+    await seeded.appendSessions([session('demo', 9, 30)])
+    await seeded.appendSessions([
+      { ...session('real', 9, 30), startTime: at(9) + 86_400_000, endTime: at(10) + 86_400_000 },
+    ])
+    await seeded.markDemoDays(['2026-03-14'])
+    await seeded.saveSettings({ ...seeded.getSettings(), seedDemoWhenUnavailable: true })
+    await seeded.flush()
+
+    const upgraded = await open()
+    expect(upgraded.listDayKeys()).toEqual(['2026-03-15'])
+    expect(await upgraded.getSessions('2026-03-15')).toHaveLength(1)
+    expect(upgraded.demoDays()).toEqual([])
+    // The migration also turns the honest default back on, or the very next
+    // boot with capture still unavailable would immediately reseed what it
+    // just removed.
+    expect(upgraded.getSettings().seedDemoWhenUnavailable).toBe(false)
+
+    // Idempotent: nothing left to remove on a third boot, and the real day
+    // is still exactly what it was.
+    const again = await open()
+    expect(again.listDayKeys()).toEqual(['2026-03-15'])
+    expect(again.demoDays()).toEqual([])
+  })
+
+  it('never removes real data when there is nothing marked as demo', async () => {
+    const storage = await open()
+    await storage.appendSessions([session('real', 9, 30)])
+    await storage.flush()
+
+    const reopened = await open()
+    expect(await reopened.getSessions('2026-03-14')).toHaveLength(1)
+  })
+})
+
 describe('migrateConfig', () => {
   it('fills in missing sections of an older config', () => {
     const config = migrateConfig({ version: 1 })

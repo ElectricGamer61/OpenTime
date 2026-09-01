@@ -17,6 +17,7 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  nativeTheme,
   Notification,
   powerMonitor,
   shell,
@@ -26,7 +27,7 @@ import {
 } from 'electron'
 
 import { dayKey, lastNDayKeys, parseYmdLocal, formatYmdLocal } from '../core/day'
-import { generateDemoDay } from '../core/demo'
+import { generateDemoDay, shouldSeedDemo } from '../core/demo'
 import { exportFilename, parseBackup } from '../core/export'
 import { sanitizeGoal } from '../core/goals'
 import { focusOutcome, sealFocus, startFocus, type FocusStartInput } from '../core/focus'
@@ -94,6 +95,28 @@ const tokenFile = () => path.join(app.getPath('userData'), 'opentime-google-toke
 
 // ── Window ───────────────────────────────────────────────────────────────────
 
+/**
+ * Windows paints its inset minimize/maximize/close controls itself, as a
+ * native overlay on top of the page — `titleBarOverlay` below only sets its
+ * *initial* colours. It has to be kept in sync with `--bg`/`--text-dim` in
+ * styles.css by hand, in both directions, or the overlay strip stays
+ * whichever theme the window happened to be created in: a dark box parked
+ * over a light custom title bar (or vice-versa), reading as a broken frame
+ * rather than as chrome that matches the app.
+ */
+const TITLE_BAR_OVERLAY = {
+  light: { color: '#eef0f5', symbolColor: '#5b6070', height: 44 },
+  dark: { color: '#0d0d0f', symbolColor: '#8a8a92', height: 44 },
+}
+
+/** Keep the native Windows title-bar overlay's colours matched to the theme. */
+function syncTitleBarOverlay(): void {
+  if (process.platform !== 'win32' || !mainWindow) return
+  mainWindow.setTitleBarOverlay(
+    nativeTheme.shouldUseDarkColors ? TITLE_BAR_OVERLAY.dark : TITLE_BAR_OVERLAY.light
+  )
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -103,7 +126,7 @@ function createWindow(): void {
     show: false,
     // Must match `--bg` in the renderer, or the window paints a different dark
     // for the frame or two before the first render lands.
-    backgroundColor: '#0d0d0f',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d0d0f' : '#eef0f5',
     title: 'OpenTime',
     // The renderer draws its own title bar, so the native one is hidden and the
     // platform's window controls are inset into it. Linux is the exception:
@@ -118,12 +141,9 @@ function createWindow(): void {
           : 'default',
     ...(process.platform === 'win32'
       ? {
-          titleBarOverlay: {
-            color: '#0d0d0f',
-            symbolColor: '#8a8a92',
-            // Matches `--titlebar` in styles.css.
-            height: 44,
-          },
+          titleBarOverlay: nativeTheme.shouldUseDarkColors
+            ? TITLE_BAR_OVERLAY.dark
+            : TITLE_BAR_OVERLAY.light,
         }
       : {}),
     autoHideMenuBar: true,
@@ -305,16 +325,23 @@ function broadcast(channel: string, payload?: unknown): void {
 /**
  * First-run seeding, and the one place this app is allowed to invent data.
  *
- * Two rules make it honest. It only runs when real capture is *unavailable*, so
- * a working install never mixes fiction into a real history; and every seeded
- * day is recorded in the store so "Clear demo data" can remove exactly those
- * days and nothing else. A user who would rather see an empty dashboard turns
- * `seedDemoWhenUnavailable` off and gets one.
+ * Off by default — see `shouldSeedDemo` — so a fresh install with no capture
+ * starts on an honest empty dashboard rather than fabricated history. A user
+ * who opts in via `seedDemoWhenUnavailable` gets a backfill instead of a blank
+ * slate, and every seeded day is recorded in the store so "Clear demo data"
+ * can remove exactly those days and nothing else.
  */
 async function seedDemoHistoryIfNeeded(): Promise<void> {
   const settings = storage.getSettings()
-  if (!captureHealth.demo || !settings.seedDemoWhenUnavailable) return
-  if (!storage.isEmpty()) return
+  if (
+    !shouldSeedDemo({
+      captureIsDemo: captureHealth.demo,
+      seedDemoWhenUnavailable: settings.seedDemoWhenUnavailable,
+      storeIsEmpty: storage.isEmpty(),
+    })
+  ) {
+    return
+  }
 
   const projects = storage.getProjects()
   const rules = storage.getRules()
@@ -712,6 +739,9 @@ function registerIpc(): void {
       initCapture()
       tracker.setCapture(capture)
     }
+    // Triggers `nativeTheme`'s 'updated' event, which resyncs the Windows
+    // title-bar overlay colours to match.
+    if (saved.theme !== before.theme) nativeTheme.themeSource = saved.theme
     if (saved.retentionDays !== before.retentionDays) await applyRetention()
     broadcast(CHANNELS.dataEvent)
     return saved
@@ -918,12 +948,30 @@ if (!app.requestSingleInstanceLock()) {
 
     storage = new FileStorage(app.getPath('userData'))
     await storage.init()
+
+    // A headless diagnostic for the packaged-build smoke check: print exactly
+    // what a user would see in Settings for capture health, then exit, rather
+    // than opening a window. Exercises the real `createCapture` probe against
+    // whatever actually shipped in this build — the one thing dev mode and an
+    // unpacked build cannot prove either way.
+    if (process.argv.includes('--print-capture-health')) {
+      const health = initCapture()
+      console.log(JSON.stringify(health))
+      app.exit(health.demo ? 1 : 0)
+      return
+    }
+
     await loadTokens()
     initCapture()
     await seedDemoHistoryIfNeeded()
     await applyRetention()
 
     const settings = storage.getSettings()
+    // Drives `nativeTheme.shouldUseDarkColors`, which `createWindow` and
+    // `syncTitleBarOverlay` read — this is what makes "system" resolve to the
+    // real OS theme instead of always reading as light.
+    nativeTheme.themeSource = settings.theme
+    nativeTheme.on('updated', syncTitleBarOverlay)
 
     tracker = new Tracker(
       {

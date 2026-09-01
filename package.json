@@ -17,7 +17,7 @@
     "test:e2e": "npm run build && node scripts/e2e.mjs",
     "test:watch": "vitest",
     "start": "npm run build && electron .",
-    "package:win": "npm run build && electron-builder --win --publish never",
+    "package:win": "npm run build && node scripts/prepare-win-redist.mjs && electron-builder --win --publish never",
     "package:mac": "npm run build && electron-builder --mac --publish never"
   },
   "dependencies": {},
@@ -52,7 +52,16 @@
         "nsis"
       ],
       "artifactName": "OpenTime-${version}-setup.${ext}",
-      "signAndEditExecutable": false
+      "signAndEditExecutable": false,
+      "extraFiles": [
+        {
+          "from": "build/win-redist",
+          "to": ".",
+          "filter": [
+            "*.dll"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
