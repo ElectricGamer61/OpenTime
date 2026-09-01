@@ -937,6 +937,13 @@ function registerIpc(): void {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 if (!app.requestSingleInstanceLock()) {
+  // Distinguish this from the `--print-capture-health` diagnostic finding
+  // capture genuinely unavailable: both otherwise look like "silent exit,
+  // no output," which is exactly the ambiguity that cost time chasing the
+  // wrong cause when a prior process's lock hadn't yet been released.
+  if (process.argv.includes('--print-capture-health')) {
+    console.error('another OpenTime instance already holds the single-instance lock')
+  }
   app.quit()
 } else {
   app.on('second-instance', showWindow)
@@ -956,8 +963,15 @@ if (!app.requestSingleInstanceLock()) {
     // unpacked build cannot prove either way.
     if (process.argv.includes('--print-capture-health')) {
       const health = initCapture()
-      console.log(JSON.stringify(health))
-      app.exit(health.demo ? 1 : 0)
+      // `app.exit()` terminates immediately, without waiting for pending I/O.
+      // On Windows, a piped (non-TTY) stdout write is asynchronous, so a plain
+      // `console.log` followed by `app.exit()` is a race the write can lose —
+      // the process exits before the pipe flushes and the caller sees no
+      // output at all. Exiting from the write's own callback guarantees the
+      // bytes are on the pipe first.
+      process.stdout.write(`${JSON.stringify(health)}\n`, () => {
+        app.exit(health.demo ? 1 : 0)
+      })
       return
     }
 

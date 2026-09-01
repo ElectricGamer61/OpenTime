@@ -82,6 +82,12 @@ jobs:
           }
           Write-Host "OpenTime.exe is running (PID $($proc.Id))"
           Stop-Process -Id $proc.Id -Force
+          # Stop-Process requests termination and returns without waiting for
+          # the OS to actually finish tearing the process down, so the next
+          # step's `--print-capture-health` launch can race the release of
+          # this instance's single-instance-lock mutex. Wait for it to be
+          # gone so that launch sees a clean slate.
+          Wait-Process -Id $proc.Id -Timeout 10 -ErrorAction SilentlyContinue
 
           $written = Get-ChildItem -Path $userData -Recurse -ErrorAction SilentlyContinue
           if (-not $written) {
