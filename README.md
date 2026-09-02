@@ -413,13 +413,32 @@ the demo history includes plausible meetings so the overlay is visible.
 
 ## Packaging for Windows and macOS
 
-`electron-builder` is configured in `package.json`. Targets: NSIS on Windows
-(per-user install, changeable directory), dmg on macOS.
+`electron-builder` is configured in `electron-builder.cjs` (a file rather than
+package.json's `build` key so `signAndEditExecutable` can vary by host — see
+below; electron-builder only discovers a config file named exactly
+`electron-builder.<ext>`, not `electron-builder.config.<ext>`). Targets: NSIS
+on Windows (per-user install, changeable directory), dmg on macOS.
 
 ```bash
 npm run package:win
 npm run package:mac
 ```
+
+### App icon
+
+`build/icon.svg` is the single hand-authored source — a rounded-square mark in
+the brand violet carrying the same clock glyph `IconClock` draws in the
+renderer. `npm run icons` renders every packaged raster from it: `icon.ico`
+(Windows — installer, uninstaller, both shortcuts, and the exe itself),
+`icon.icns` (macOS), `icon.png` (the runtime window/taskbar icon), and
+`tray/{16,20,24,32,40,48}.png` (one exact-pixel representation per tray scale
+factor — Electron does not resize a `Tray` image itself, so a single upscaled
+bitmap reads visibly soft on HiDPI). `src/main/icon.ts` resolves these at
+runtime in both dev and packaged builds; `tests/icons.test.ts` regenerates
+every raster and byte-compares it against what's committed, so an edited SVG
+that was never re-run through `npm run icons` fails CI instead of shipping a
+stale icon. Edit `build/icon.svg`, run `npm run icons`, commit the
+regenerated files alongside it.
 
 Notes for a real release:
 
@@ -438,15 +457,23 @@ Notes for a real release:
   produces a real `release/win-unpacked/OpenTime.exe` on any host, but wrapping
   it into `OpenTime-<version>-setup.exe` invokes `nsis-resources`, which
   electron-builder can only run through Wine when the host OS is not Windows.
-  Without Wine (no `sudo` in a sandboxed environment, say), `signAndEditExecutable:
-  false` in `package.json`'s `build.win` still lets the unpacked app build to
-  completion — icon/version-resource stamping is skipped, everything else is
-  identical — but the NSIS step itself fails with `wine is required`. Build the
-  installer on Windows, on a Linux host with Wine installed, or in CI. `win-unpacked`
-  was verified end to end this way: launched directly under WSL2 (the packaged
-  `.exe`, not `electron .`, with `--user-data-dir` pointed outside the real
-  profile), it booted, detected capture was unavailable, seeded gated demo data,
-  and wrote real sharded day files through the same storage path dev mode uses.
+  `electron-builder.cjs` sets `win.signAndEditExecutable` to `true` only when
+  actually running on Windows (`process.platform === 'win32'`) — real hardware
+  or the `windows-latest` CI runner — so rcedit (which stamps `icon.ico` and
+  the version resources into the exe) runs wherever it can. Without Wine (no
+  `sudo` in a sandboxed environment, say), that conditional still lets the
+  unpacked app build to completion with the correct extraResources icon
+  assets, but its raw exe keeps Electron's default icon until rcedit runs on
+  a Windows host, and the NSIS step itself fails outright with
+  `wine is required`. Build the installer on Windows, on a Linux host with
+  Wine installed, or in CI. `win-unpacked` was verified end to end this way:
+  launched directly under WSL2 (the packaged `.exe`, not `electron .`, with
+  `--user-data-dir` pointed outside the real profile), it booted, detected
+  capture was unavailable, seeded gated demo data, and wrote real sharded day
+  files through the same storage path dev mode uses. The `windows-package.yml`
+  workflow additionally installs the real NSIS output and samples the icon
+  colour on the installer, the installed exe, the uninstaller, and both
+  shortcuts to confirm the brand mark actually reached each one.
 - **Auto-update is not wired up.** For an open project the natural choice is
   `electron-updater` against public GitHub Releases; v0 deliberately ships
   without it rather than with a feed only the author can publish to.

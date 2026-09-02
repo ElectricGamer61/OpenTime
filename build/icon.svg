@@ -1,0 +1,28 @@
+<!--
+  OpenTime app icon, master source.
+
+  A rounded square mark in the brand violet (the same accent-hi/accent pair
+  the login button gradient uses, see styles.css) carrying a white clock
+  glyph scaled from IconClock in src/renderer/components/Icons.tsx, the same
+  circle-plus-hands drawn for the live tracking card, so the packaged app's
+  identity matches what the UI already draws. Solid fill (not a stroke-only
+  glyph) so it reads at 16px in a tray and stays legible on both light and
+  dark taskbars/desktops.
+
+  Regenerate every packaged raster (build/icon.ico, build/icon.icns, the
+  runtime tray/window PNGs) from this file with npm run icons. Do not hand
+  edit the generated files.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8a63ff" />
+      <stop offset="1" stop-color="#5b2fe0" />
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="215" fill="url(#bg)" />
+  <g fill="none" stroke="#ffffff" stroke-width="46" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="317" />
+    <path d="M512 334.9 L512 512 L623.9 577.3" />
+  </g>
+</svg>

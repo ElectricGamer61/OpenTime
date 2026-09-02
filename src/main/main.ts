@@ -23,7 +23,6 @@ import {
   shell,
   systemPreferences,
   Tray,
-  nativeImage,
 } from 'electron'
 
 import { dayKey, lastNDayKeys, parseYmdLocal, formatYmdLocal } from '../core/day'
@@ -56,6 +55,7 @@ import type {
   SessionEdit,
 } from '../shared/ipc'
 import { createCapture, type Capture } from './capture'
+import { trayIcon, windowIconPath } from './icon'
 import { applyEdit } from './edits/applyEdit'
 import { buildExportPayload, FORMAT_SPEC, resolveRange } from './export/buildExport'
 import {
@@ -128,6 +128,9 @@ function createWindow(): void {
     // for the frame or two before the first render lands.
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d0d0f' : '#eef0f5',
     title: 'OpenTime',
+    // macOS ignores this in favour of the app bundle's .icns; Windows and
+    // Linux use it for the taskbar/Alt-Tab icon.
+    icon: windowIconPath(),
     // The renderer draws its own title bar, so the native one is hidden and the
     // platform's window controls are inset into it. Linux is the exception:
     // hiding the frame there removes the controls outright rather than
@@ -181,14 +184,6 @@ function showWindow(): void {
     mainWindow.show()
     mainWindow.focus()
   }
-}
-
-// A 16px monochrome dot, drawn inline — no binary asset to keep in sync.
-function trayIcon(): Electron.NativeImage {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="#7aa2ff" stroke-width="2"/><path d="M8 4.5V8l2.5 1.5" stroke="#7aa2ff" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`
-  return nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
-  )
 }
 
 /**
@@ -475,6 +470,7 @@ async function connectCalendar(): Promise<CalendarResult> {
         height: 700,
         title: 'Connect Google Calendar',
         autoHideMenuBar: true,
+        icon: windowIconPath(),
         webPreferences: { nodeIntegration: false, contextIsolation: true },
       })
       authWindow.webContents.setUserAgent(OAUTH_USER_AGENT)

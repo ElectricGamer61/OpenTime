@@ -1,7 +1,7 @@
 /**
  * Ensures `build/win-redist/` exists before electron-builder runs.
  *
- * electron-builder's `win.extraFiles` config (package.json) copies whatever is
+ * electron-builder's `win.extraFiles` config (electron-builder.cjs) copies whatever is
  * in this directory to sit next to OpenTime.exe — which is where Windows'
  * default DLL search order looks *before* System32, so a runtime DLL dropped
  * there is found without installing anything system-wide or asking for admin

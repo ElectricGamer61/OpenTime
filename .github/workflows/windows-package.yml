@@ -141,6 +141,80 @@ jobs:
           }
           Write-Host "Confirmed native capture is active in the installed app: $($health.adapter)"
 
+      # electron-builder can only stamp build/icon.ico into the .exe's
+      # resources (rcedit) on a real Windows host, and NSIS shortcut/installer
+      # icon wiring can only be inspected the same way — see
+      # electron-builder.cjs's canEditExecutable comment and
+      # src/main/icon.ts. Checks every place a user actually sees the icon:
+      # the installer, the installed exe, the uninstaller, and both
+      # shortcuts, by sampling each icon's average colour against the brand
+      # mark's violet fill (build/icon.svg) rather than diffing exact pixels,
+      # which would be brittle across icon-extraction paths.
+      - name: Verify the branded icon everywhere a user sees it
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+
+          function Test-BrandedIcon($path, $label) {
+            if (-not (Test-Path $path)) { throw "$label not found at $path" }
+            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($path)
+            if ($null -eq $icon) { throw "$label has no associated icon" }
+            $bmp = $icon.ToBitmap()
+            $rSum = 0; $gSum = 0; $bSum = 0; $n = 0
+            for ($x = 0; $x -lt $bmp.Width; $x += 2) {
+              for ($y = 0; $y -lt $bmp.Height; $y += 2) {
+                $p = $bmp.GetPixel($x, $y)
+                if ($p.A -gt 32) {
+                  $rSum += $p.R; $gSum += $p.G; $bSum += $p.B; $n++
+                }
+              }
+            }
+            if ($n -eq 0) { throw "$label icon is fully transparent" }
+            $r = $rSum / $n; $g = $gSum / $n; $b = $bSum / $n
+            Write-Host "$label average colour over $n opaque samples: R=$r G=$g B=$b"
+            # build/icon.svg's fill is a violet gradient (#8a63ff -> #5b2fe0):
+            # blue and red both clearly outweigh green. A default/missing
+            # Electron icon (or a blank one) does not.
+            if (-not ($b -gt $g + 15 -and $r -gt $g + 5)) {
+              throw "$label icon does not look like the OpenTime brand mark (expected violet, got R=$r G=$g B=$b)"
+            }
+          }
+
+          $installerExe = (Get-ChildItem release\*.exe | Select-Object -First 1).FullName
+          Test-BrandedIcon $installerExe "Installer"
+
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\OpenTime"
+          Test-BrandedIcon (Join-Path $installDir "OpenTime.exe") "Installed app"
+
+          $uninstaller = Get-ChildItem (Join-Path $installDir "Uninstall*.exe") | Select-Object -First 1
+          if (-not $uninstaller) { throw "No uninstaller exe found under $installDir" }
+          Test-BrandedIcon $uninstaller.FullName "Uninstaller"
+
+          function Test-ShortcutIcon($shortcutPath, $label) {
+            if (-not (Test-Path $shortcutPath)) { throw "$label shortcut not found at $shortcutPath" }
+            $shell = New-Object -ComObject WScript.Shell
+            $lnk = $shell.CreateShortcut($shortcutPath)
+            Write-Host "$label shortcut target: $($lnk.TargetPath), icon: $($lnk.IconLocation)"
+            # electron-builder's NSIS shortcuts point their icon at the
+            # installed exe itself rather than embedding a separate .ico, so
+            # confirming the icon resolves to OpenTime.exe (already proven
+            # branded above) is what "this shortcut shows the brand icon"
+            # actually reduces to.
+            $iconPath = ($lnk.IconLocation -split ',')[0]
+            if ([string]::IsNullOrWhiteSpace($iconPath)) { $iconPath = $lnk.TargetPath }
+            if ($iconPath -notlike '*OpenTime.exe') {
+              throw "$label shortcut icon does not point at OpenTime.exe (got '$iconPath')"
+            }
+          }
+
+          $startMenu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\OpenTime.lnk"
+          Test-ShortcutIcon $startMenu "Start Menu"
+
+          $desktop = Join-Path $env:USERPROFILE "Desktop\OpenTime.lnk"
+          Test-ShortcutIcon $desktop "Desktop"
+
+          Write-Host "Branded icon confirmed on the installer, installed exe, uninstaller, and both shortcuts."
+
       # electron-builder's NSIS step needs a real Windows host (it needs Wine
       # everywhere else); this runner is that host. Releases are used instead
       # of actions/upload-artifact because the repo's Actions artifact quota
