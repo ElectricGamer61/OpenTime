@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { summarizeDay } from '../src/core/aggregate'
 import { dayKey } from '../src/core/day'
 import { DEFAULT_PROJECTS, DEFAULT_RULES, DEFAULT_SETTINGS } from '../src/core/defaults'
-import { generateDemoDay, seededRandom } from '../src/core/demo'
+import { generateDemoDay, seededRandom, shouldSeedDemo } from '../src/core/demo'
 
 const opts = {
   dayStartHour: DEFAULT_SETTINGS.dayStartHour,
@@ -84,5 +84,25 @@ describe('seededRandom', () => {
       expect(v).toBeGreaterThanOrEqual(0)
       expect(v).toBeLessThan(1)
     }
+  })
+})
+
+describe('shouldSeedDemo', () => {
+  const base = { captureIsDemo: true, seedDemoWhenUnavailable: true, storeIsEmpty: true }
+
+  it('seeds only when capture is unavailable, the user opted in, and the store is empty', () => {
+    expect(shouldSeedDemo(base)).toBe(true)
+  })
+
+  it('never seeds on a fresh install with the honest default (opted out)', () => {
+    expect(shouldSeedDemo({ ...base, seedDemoWhenUnavailable: false })).toBe(false)
+  })
+
+  it('never seeds while real capture is working, opt-in or not', () => {
+    expect(shouldSeedDemo({ ...base, captureIsDemo: false })).toBe(false)
+  })
+
+  it('never seeds into a store that already has real days', () => {
+    expect(shouldSeedDemo({ ...base, storeIsEmpty: false })).toBe(false)
   })
 })

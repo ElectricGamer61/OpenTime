@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "start": "npm run build && electron .",
     "icons": "node scripts/make-icons.mjs",
-    "package:win": "npm run build && electron-builder --win --publish never",
+    "package:win": "npm run build && node scripts/prepare-win-redist.mjs && electron-builder --win --publish never",
     "package:mac": "npm run build && electron-builder --mac --publish never"
   },
   "optionalDependencies": {

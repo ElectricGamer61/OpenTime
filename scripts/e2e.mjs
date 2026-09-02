@@ -105,6 +105,17 @@ async function main() {
   // leftover store from a previous run quietly changes every expectation.
   await fs.rm(USER_DATA, { recursive: true, force: true })
   await fs.mkdir(OUT, { recursive: true })
+
+  // Demo seeding is opt-in (off by default, so a real fresh install never
+  // shows fabricated history) — most of this suite exercises merge/retime/
+  // retag against a day that has to already exist, so it opts in the same way
+  // a user would in Settings, before the app ever boots against this store.
+  await fs.mkdir(path.join(USER_DATA, 'opentime'), { recursive: true })
+  await fs.writeFile(
+    path.join(USER_DATA, 'opentime', 'meta.json'),
+    JSON.stringify({ version: 2, settings: { seedDemoWhenUnavailable: true } }),
+    'utf8'
+  )
   console.log(`run: port=${PORT} userData=${USER_DATA}`)
 
   // Refuse to run against a port something else already owns: attaching to a

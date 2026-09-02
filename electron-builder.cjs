@@ -39,6 +39,17 @@ module.exports = {
     icon: 'build/icon.ico',
     artifactName: 'OpenTime-${version}-setup.${ext}',
     signAndEditExecutable: canEditExecutable,
+    // Bundles the VC++ runtime DLLs @miniben90/x-win's native binary links
+    // against — see AGENTS.md's x-win/VCRUNTIME140.dll note. Populated by
+    // scripts/prepare-win-redist.mjs / the CI "Bundle the VC++ runtime DLLs"
+    // step; Windows checks the exe's own directory before System32.
+    extraFiles: [
+      {
+        from: 'build/win-redist',
+        to: '.',
+        filter: ['*.dll'],
+      },
+    ],
   },
   nsis: {
     oneClick: false,

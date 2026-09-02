@@ -84,9 +84,9 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({ onboardedAt: 1700000000000 }).onboardedAt).toBe(1700000000000)
   })
 
-  it('defaults demo seeding on, but honours an explicit opt-out', () => {
-    expect(sanitizeSettings({}).seedDemoWhenUnavailable).toBe(true)
-    expect(sanitizeSettings({ seedDemoWhenUnavailable: false }).seedDemoWhenUnavailable).toBe(false)
+  it('defaults demo seeding off, but honours an explicit opt-in', () => {
+    expect(sanitizeSettings({}).seedDemoWhenUnavailable).toBe(false)
+    expect(sanitizeSettings({ seedDemoWhenUnavailable: true }).seedDemoWhenUnavailable).toBe(true)
   })
 
   it('is idempotent', () => {

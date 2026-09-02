@@ -2,10 +2,14 @@
  * Deterministic demo data.
  *
  * Used in two places:
- *  - to seed a realistic backfill of previous days on first run when real OS
- *    capture is unavailable (headless CI, WSL, a locked-down Wayland session),
- *    so the dashboard is never a blank slate;
+ *  - to backfill previous days, on request, when real OS capture is
+ *    unavailable (headless CI, WSL, a locked-down Wayland session), so a
+ *    screenshot or a reviewer's first look is never a blank slate;
  *  - as the sample source behind the demo capture adapter.
+ *
+ * It never runs unasked: `shouldSeedDemo` is off by default, so a fresh
+ * install with no capture starts on an honest empty dashboard rather than
+ * fabricated history the user never agreed to.
  *
  * The generator is seeded, so the same day key always produces the same day —
  * screenshots and tests stay stable.
@@ -14,6 +18,23 @@
 import { dayStartTs } from './day'
 import { SessionBuilder } from './sessions'
 import type { CalendarEvent, CategoryRule, IdleBlock, Project, Session, WindowSample } from './types'
+
+/**
+ * Whether first-run seeding should fabricate backfill history right now.
+ *
+ * All three have to hold: capture is genuinely unavailable (seeding when
+ * capture works would mix fiction into real history), the user opted in
+ * (`seedDemoWhenUnavailable`, off by default), and the store is still empty
+ * (seeding into a store that already has real days would misdate them as
+ * belonging to the same history as fabricated ones).
+ */
+export function shouldSeedDemo(opts: {
+  captureIsDemo: boolean
+  seedDemoWhenUnavailable: boolean
+  storeIsEmpty: boolean
+}): boolean {
+  return opts.captureIsDemo && opts.seedDemoWhenUnavailable && opts.storeIsEmpty
+}
 
 /** Small deterministic PRNG (mulberry32) — no dependency, stable across runs. */
 export function seededRandom(seed: number): () => number {
