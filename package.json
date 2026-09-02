@@ -2,7 +2,7 @@
   "name": "opentime",
   "productName": "OpenTime",
   "version": "0.2.0",
-  "description": "OpenTime \u2014 a lean, local-first automatic time tracker for Windows and macOS.",
+  "description": "OpenTime — a lean, local-first automatic time tracker for Windows and macOS.",
   "private": true,
   "license": "Apache-2.0",
   "author": "OpenTime",
@@ -17,10 +17,10 @@
     "test:e2e": "npm run build && node scripts/e2e.mjs",
     "test:watch": "vitest",
     "start": "npm run build && electron .",
+    "icons": "node scripts/make-icons.mjs",
     "package:win": "npm run build && electron-builder --win --publish never",
     "package:mac": "npm run build && electron-builder --mac --publish never"
   },
-  "dependencies": {},
   "optionalDependencies": {
     "@miniben90/x-win": "^1.10.0"
   },
@@ -31,40 +31,13 @@
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.24.0",
+    "png2icons": "^2.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "sharp": "^0.35.4",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
-  },
-  "build": {
-    "appId": "app.opentime.desktop",
-    "productName": "OpenTime",
-    "files": [
-      "dist/**/*",
-      "package.json"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "artifactName": "OpenTime-${version}-setup.${ext}",
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ],
-      "category": "public.app-category.productivity"
-    }
   },
   "allowScripts": {
     "electron@33.4.11": true,
