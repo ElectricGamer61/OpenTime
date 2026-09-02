@@ -268,6 +268,13 @@ select option {
   background: var(--bg);
   -webkit-app-region: drag;
   user-select: none;
+  /* On Windows the inset minimize/maximize/close controls are painted by the
+     OS on top of the page, in the box `titleBarOverlay` reserves — the exact
+     safe rectangle the platform hands back via this env var. Without this,
+     content in `.titlebar-right` runs the full row width and lands partly
+     underneath those controls instead of stopping short of them. A no-op
+     everywhere the variable is unset (macOS, Linux). */
+  width: env(titlebar-area-width, 100%);
 }
 
 /* macOS insets its traffic lights into the left of the bar; this is the room

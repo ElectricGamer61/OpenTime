@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ignoredTitleKeywords: [],
   retentionDays: 0,
   captureMode: 'auto',
-  seedDemoWhenUnavailable: true,
+  seedDemoWhenUnavailable: false,
   launchAtLogin: false,
   notificationsEnabled: true,
   theme: 'system',
@@ -193,7 +193,7 @@ export function sanitizeSettings(input: Partial<Settings> | null | undefined): S
     retentionDays: clampInt(raw.retentionDays, RETENTION_RANGE, DEFAULT_SETTINGS.retentionDays),
     captureMode,
     seedDemoWhenUnavailable:
-      raw.seedDemoWhenUnavailable === undefined ? true : !!raw.seedDemoWhenUnavailable,
+      raw.seedDemoWhenUnavailable === undefined ? false : !!raw.seedDemoWhenUnavailable,
     launchAtLogin: !!raw.launchAtLogin,
     notificationsEnabled: raw.notificationsEnabled === undefined ? true : !!raw.notificationsEnabled,
     theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : 'system',

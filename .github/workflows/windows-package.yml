@@ -25,6 +25,32 @@ jobs:
 
       - run: npm test
 
+      # The native capture module (@miniben90/x-win) is an MSVC-built addon
+      # that dynamically links VCRUNTIME140.dll. That's present on this build
+      # runner (it ships Visual Studio Build Tools) but is NOT guaranteed on a
+      # end user's machine — a fresh/minimal Windows install can lack it,
+      # which is exactly what made capture silently fall back to the demo
+      # adapter on a real install despite CI looking fine. Copying it (and its
+      # near-universal companions) next to OpenTime.exe via `win.extraFiles`
+      # means Windows finds it in the app's own directory before it ever needs
+      # the system-wide redistributable — no elevation, no installer, no
+      # network fetch, matching the app's local-first, no-admin-required
+      # install today.
+      - name: Bundle the VC++ runtime DLLs next to the exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/win-redist | Out-Null
+          $dlls = 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll'
+          foreach ($dll in $dlls) {
+            $src = Join-Path $env:SystemRoot "System32\$dll"
+            if (Test-Path $src) {
+              Copy-Item $src build/win-redist/
+              Write-Host "bundled $dll"
+            } else {
+              Write-Host "warning: $dll not found on this runner, skipping"
+            }
+          }
+
       - run: npm run package:win
 
       - name: Zip the unpacked build
@@ -56,12 +82,64 @@ jobs:
           }
           Write-Host "OpenTime.exe is running (PID $($proc.Id))"
           Stop-Process -Id $proc.Id -Force
+          # Stop-Process requests termination and returns without waiting for
+          # the OS to actually finish tearing the process down, so the next
+          # step's `--print-capture-health` launch can race the release of
+          # this instance's single-instance-lock mutex. Wait for it to be
+          # gone so that launch sees a clean slate.
+          Wait-Process -Id $proc.Id -Timeout 10 -ErrorAction SilentlyContinue
 
           $written = Get-ChildItem -Path $userData -Recurse -ErrorAction SilentlyContinue
           if (-not $written) {
             throw "Installed app never wrote anything to its user-data dir"
           }
           Write-Host "Confirmed the installed app wrote $($written.Count) file(s)/dir(s) to its user-data dir"
+
+      # The release blocker this workflow exists to catch: capture silently
+      # falling back to the demo adapter in the installed app even though
+      # everything looked fine in dev and in the unpacked build. Runs the
+      # real `createCapture` probe inside the installed exe — same asar and
+      # extraFiles layout an end user gets — and fails the job if native
+      # capture did not come up, or if the redistributable DLLs did not
+      # actually land next to the exe.
+      - name: Verify capture health in the installed app
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\OpenTime"
+          $exePath = Join-Path $installDir "OpenTime.exe"
+
+          foreach ($dll in 'vcruntime140.dll', 'msvcp140.dll') {
+            $path = Join-Path $installDir $dll
+            if (-not (Test-Path $path)) {
+              throw "$dll was not bundled next to the installed exe at $path"
+            }
+          }
+
+          $userData = Join-Path $env:TEMP "opentime-capture-check"
+          $healthFile = Join-Path $userData "capture-health.json"
+          # `& $exePath ... 2>&1` does not reliably wait for this GUI-subsystem
+          # exe or capture its output — three straight CI runs returned in well
+          # under a second with an empty stream AND a null exit code, regardless
+          # of what/how the app wrote. `Start-Process -Wait` is the pattern
+          # PowerShell actually blocks a GUI-subsystem child on; the app writes
+          # its diagnostic to a file rather than stdout so nothing here depends
+          # on stdio redirection working at all.
+          $proc = Start-Process -FilePath $exePath -ArgumentList "--user-data-dir=$userData","--disable-gpu","--print-capture-health" -PassThru -Wait
+          Write-Host "capture health process exit code: $($proc.ExitCode)"
+
+          if (-not (Test-Path $healthFile)) {
+            throw "Installed app did not write $healthFile (exit code $($proc.ExitCode))"
+          }
+          $healthRaw = Get-Content $healthFile -Raw
+          Write-Host "capture health file contents: $healthRaw"
+          $health = $healthRaw | ConvertFrom-Json
+          if ($health.demo -ne $false) {
+            throw "Expected native capture, got: $healthRaw"
+          }
+          if ($health.adapter -notlike '*x-win*') {
+            throw "Expected the x-win adapter, got: $healthRaw"
+          }
+          Write-Host "Confirmed native capture is active in the installed app: $($health.adapter)"
 
       # electron-builder's NSIS step needs a real Windows host (it needs Wine
       # everywhere else); this runner is that host. Releases are used instead

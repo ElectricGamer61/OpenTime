@@ -135,7 +135,28 @@ export class FileStorage implements Storage {
       await this.importLegacyStore()
     }
     await this.replayJournal()
+    await this.purgeStaleDemoData()
     await this.writeMeta()
+  }
+
+  /**
+   * One-time upgrade cleanup: a version of this app used to seed fabricated
+   * history by default, so an install that upgrades from it can carry demo
+   * days it never asked for. This removes exactly what `markDemoDays` marked
+   * — never a row without that marker — and is idempotent for free, because
+   * `clearDemoDays` empties the marker set it reads: nothing is left to find
+   * on the next boot.
+   *
+   * The only way `demoDayKeys` is ever non-empty is that a past boot had
+   * `seedDemoWhenUnavailable` on and an empty store at the time, so clearing
+   * it back to the honest default here as well is not overriding a real
+   * choice — it is what stops the same boot from immediately reseeding what
+   * was just removed.
+   */
+  private async purgeStaleDemoData(): Promise<void> {
+    if (!this.demoDayKeys.size) return
+    const removed = await this.clearDemoDays()
+    if (removed) this.config.settings = { ...this.config.settings, seedDemoWhenUnavailable: false }
   }
 
   private async exists(file: string): Promise<boolean> {
