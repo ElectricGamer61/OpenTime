@@ -190,6 +190,7 @@ export function FocusMode({
               run={pomodoro.run}
               progress={pomodoro.progress}
               error={pomodoro.error}
+              busy={pomodoro.busy}
               musicPlayer={musicPlayer}
               onPause={() => void pomodoro.pause()}
               onResume={() => void pomodoro.resume()}
@@ -602,6 +603,7 @@ function PomodoroDock({
   run,
   progress,
   error,
+  busy,
   musicPlayer,
   onPause,
   onResume,
@@ -611,6 +613,8 @@ function PomodoroDock({
   run: NonNullable<ReturnType<typeof usePomodoro>['run']>
   progress: ReturnType<typeof usePomodoro>['progress']
   error: string | null
+  /** A phase transition is in flight — Pause/Resume/Skip are disabled so a double-click can't race it. Stop stays live: it is always allowed to interrupt. */
+  busy: boolean
   musicPlayer: MusicPlayerState
   onPause(): void
   onResume(): void
@@ -641,10 +645,16 @@ function PomodoroDock({
           className="icon-btn"
           onClick={run.paused ? onResume : onPause}
           title={run.paused ? 'Resume' : 'Pause'}
+          disabled={busy}
         >
           {run.paused ? <IconPlay size={16} /> : <IconPause size={16} />}
         </button>
-        <button className="btn ghost small" onClick={onSkip} title={`Skip to ${work ? 'break' : 'work'}`}>
+        <button
+          className="btn ghost small"
+          onClick={onSkip}
+          title={`Skip to ${work ? 'break' : 'work'}`}
+          disabled={busy}
+        >
           <IconSkip size={14} />
           Skip
         </button>

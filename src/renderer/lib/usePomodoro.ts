@@ -49,11 +49,20 @@ function phaseSeconds(run: PomodoroRun, phase: PomodoroPhase): number {
 export function usePomodoro(app: OpenTimeState) {
   const [run, setRun] = useState<PomodoroRun | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const now = useNow(1000)
-  /** Guards the tick effect against re-entering a transition while its own async work is still in flight. */
-  const advancing = useRef(false)
   const runRef = useRef(run)
   runRef.current = run
+  /**
+   * Bumped by every action that can open a work session (the tick, skip,
+   * resume). `advanceTo` snapshots it before awaiting `openWork` and checks
+   * it after: if something newer has started in the meantime — most
+   * concretely, `stop()` landing while the tick's own transition is still
+   * waiting on `app.startFocus` — the session `openWork` just opened has no
+   * `run` left to represent it, so it is sealed immediately instead of
+   * being left running with no Pomodoro framing over it.
+   */
+  const epoch = useRef(0)
 
   const remainingNow = (r: PomodoroRun): number =>
     r.paused ? (r.pausedRemaining ?? 0) : Math.max(0, Math.round(((r.endsAt ?? now) - now) / 1000))
@@ -84,7 +93,9 @@ export function usePomodoro(app: OpenTimeState) {
   const start = useCallback(
     async (input: PomodoroInput) => {
       setError(null)
+      setBusy(true)
       const ok = await openWork(input, input.workMinutes)
+      setBusy(false)
       if (!ok) return
       setRun({
         label: input.label,
@@ -102,11 +113,21 @@ export function usePomodoro(app: OpenTimeState) {
     [openWork]
   )
 
-  /** Move on to `next`, at its full planned length — used by a natural phase completion and by "Skip". */
+  /**
+   * Move on to `next`, at its full planned length — used by a natural phase
+   * completion and by "Skip". `myEpoch` is this call's stamp: if `stop()` (or
+   * another transition) has bumped `epoch` past it by the time `openWork`
+   * resolves, this call has been superseded — the session it just opened is
+   * sealed immediately rather than left running with no `run` above it.
+   */
   const advanceTo = useCallback(
-    async (next: PomodoroPhase, from: PomodoroRun) => {
+    async (next: PomodoroPhase, from: PomodoroRun, myEpoch: number) => {
       if (next === 'work') {
         const ok = await openWork(from, from.workMinutes)
+        if (epoch.current !== myEpoch) {
+          if (ok) await app.endFocus()
+          return
+        }
         if (!ok) {
           setRun(null)
           return
@@ -125,7 +146,7 @@ export function usePomodoro(app: OpenTimeState) {
           : prev
       )
     },
-    [openWork]
+    [openWork, app]
   )
 
   // The tick that actually drives phase transitions. Runs off the same `now`
@@ -133,55 +154,70 @@ export function usePomodoro(app: OpenTimeState) {
   // phase" can never disagree.
   useEffect(() => {
     const r = runRef.current
-    if (!r || r.paused || r.endsAt === null || advancing.current) return
+    if (!r || r.paused || r.endsAt === null || busy) return
     if (now < r.endsAt) return
-    advancing.current = true
+    const myEpoch = ++epoch.current
+    setBusy(true)
     void (async () => {
       if (r.phase === 'work') await sealWork()
-      await advanceTo(otherPhase(r.phase), r)
-      advancing.current = false
+      await advanceTo(otherPhase(r.phase), r, myEpoch)
+      setBusy(false)
     })()
-  }, [now, sealWork, advanceTo])
+  }, [now, busy, sealWork, advanceTo])
 
   const pause = useCallback(async () => {
     const r = runRef.current
-    if (!r || r.paused) return
+    if (!r || r.paused || busy) return
     const remaining = remainingNow(r)
+    setBusy(true)
     if (r.phase === 'work') await sealWork()
     setRun((prev) => (prev ? { ...prev, paused: true, endsAt: null, pausedRemaining: remaining } : prev))
-  }, [sealWork])
+    setBusy(false)
+  }, [busy, sealWork])
 
   const resume = useCallback(async () => {
     const r = runRef.current
-    if (!r || !r.paused) return
+    if (!r || !r.paused || busy) return
     const remaining = r.pausedRemaining ?? 0
+    setBusy(true)
     // Under a minute left is not worth reopening a session for — hand off to
     // the next phase instead of asking `startFocus` to run a session shorter
     // than the store will even keep.
     if (r.phase === 'work' && remaining < 60) {
-      await advanceTo('break', r)
+      await advanceTo('break', r, ++epoch.current)
+      setBusy(false)
       return
     }
     if (r.phase === 'work') {
       const ok = await openWork(r, Math.max(1, Math.round(remaining / 60)))
+      setBusy(false)
       if (!ok) return
+    } else {
+      setBusy(false)
     }
     setRun((prev) => (prev ? { ...prev, paused: false, endsAt: Date.now() + remaining * 1000, pausedRemaining: null } : prev))
-  }, [openWork, advanceTo])
+  }, [busy, openWork, advanceTo])
 
   const skip = useCallback(async () => {
     const r = runRef.current
-    if (!r) return
+    if (!r || busy) return
+    setBusy(true)
     if (r.phase === 'work' && !r.paused) await sealWork()
-    await advanceTo(otherPhase(r.phase), r)
-  }, [sealWork, advanceTo])
+    await advanceTo(otherPhase(r.phase), r, ++epoch.current)
+    setBusy(false)
+  }, [busy, sealWork, advanceTo])
 
   const stop = useCallback(async () => {
     const r = runRef.current
     if (!r) return
+    // Stop always wins, even mid-transition: bumping the epoch here makes any
+    // `advanceTo` currently awaiting `openWork` recognise it has been
+    // superseded and seal the session it opens instead of resurrecting `run`.
+    ++epoch.current
     if (r.phase === 'work' && !r.paused) await sealWork()
     setRun(null)
     setError(null)
+    setBusy(false)
   }, [sealWork])
 
   const progress = run ? pomodoroCountdown(remainingNow(run), phaseSeconds(run, run.phase)) : null
@@ -200,6 +236,8 @@ export function usePomodoro(app: OpenTimeState) {
       : null,
     progress,
     error,
+    /** True while a phase transition is in flight — disable Pause/Resume/Skip in the UI rather than let a double-click race it. */
+    busy,
     start,
     pause,
     resume,

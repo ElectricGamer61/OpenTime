@@ -129,6 +129,7 @@ export function MusicPlayerControl({
                       className={`music-player-track${player.track === t.id ? ' on' : ''}`}
                       onClick={() => player.setTrack(t.id)}
                       title={t.detail}
+                      aria-pressed={player.track === t.id}
                     >
                       <Icon size={18} />
                       <span>{t.label}</span>
