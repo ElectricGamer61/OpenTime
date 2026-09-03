@@ -15,18 +15,18 @@ import {
   IconFocus,
   IconFolder,
   IconFolderOpen,
-  IconMusic,
   IconPause,
   IconSettings,
   IconTarget,
   IconWeek,
 } from './components/Icons'
-import { MusicMode } from './components/MusicTimer'
+import { MusicPlayerControl } from './components/MusicPlayer'
 import { Onboarding } from './components/Onboarding'
 import { focusProgress } from '../core/focus'
-import { MUSIC_TRACKS, musicProgress, type ActiveMusicTimer } from '../core/music'
 import type { RangeKind } from '../core/range'
 import { clock, duration } from './lib/format'
+import { useMusicPlayer } from './lib/useMusicPlayer'
+import { usePomodoro } from './lib/usePomodoro'
 import type { OpenTimeState } from './state/useOpenTime'
 import { useNow, useOpenTime } from './state/useOpenTime'
 import { ActivityView } from './views/ActivityView'
@@ -78,9 +78,10 @@ export function App() {
   const [tab, setTab] = useState<Tab>('calendar')
   const [collapsed, setCollapsed] = useState(false)
   const [focusSetup, setFocusSetup] = useState(false)
-  const [musicSetup, setMusicSetup] = useState(false)
-  /** Mirrors `MusicMode`'s own state, purely so the rail button can show it running. */
-  const [musicActive, setMusicActive] = useState<ActiveMusicTimer | null>(null)
+  /** One instance, shared by the rail control and the buttons inside Focus — see `MusicPlayer.tsx`. */
+  const musicPlayer = useMusicPlayer()
+  /** One instance, shared by `FocusMode` and the rail chip below — see `usePomodoro`. */
+  const pomodoro = usePomodoro(app)
   /** Which range Reports opens on when the calendar sends you there. */
   const [reportRange, setReportRange] = useState<RangeKind>('week')
 
@@ -111,7 +112,7 @@ export function App() {
 
   return (
     <div
-      className={`app${collapsed ? ' rail-collapsed' : ''}${app.status?.focus ? ' focus-running' : ''}${musicActive ? ' music-running' : ''}`}
+      className={`app${collapsed ? ' rail-collapsed' : ''}${app.status?.focus || pomodoro.run ? ' focus-running' : ''}`}
     >
       {app.firstRun ? <Onboarding app={app} /> : null}
       <Titlebar app={app} onSettings={() => setTab('settings')} />
@@ -151,8 +152,10 @@ export function App() {
             ))}
           </div>
 
-          <FocusButton app={app} onStart={() => setFocusSetup(true)} />
-          <MusicButton active={musicActive} onStart={() => setMusicSetup(true)} />
+          <FocusButton app={app} pomodoro={pomodoro} onStart={() => setFocusSetup(true)} />
+          <div className="rail-cta rail-music">
+            <MusicPlayerControl player={musicPlayer} label="Music" />
+          </div>
           <RailFooter app={app} />
         </nav>
 
@@ -207,11 +210,12 @@ export function App() {
 
       <FocusMode
         app={app}
+        pomodoro={pomodoro}
+        musicPlayer={musicPlayer}
         open={focusSetup}
         onOpenChange={setFocusSetup}
         onOpenCalendar={() => setTab('calendar')}
       />
-      <MusicMode open={musicSetup} onOpenChange={setMusicSetup} onActiveChange={setMusicActive} />
     </div>
   )
 }
@@ -221,11 +225,37 @@ export function App() {
  *
  * While one is running this becomes the countdown rather than disappearing:
  * the dock already carries the controls, and a rail that silently loses a
- * button is a rail people stop trusting to hold the same things.
+ * button is a rail people stop trusting to hold the same things. A running
+ * Pomodoro takes priority over `app.status.focus` here on purpose — during a
+ * break phase `status.focus` is genuinely empty (see `usePomodoro`), and the
+ * chip has to keep showing the run rather than reverting to "Start focus".
  */
-function FocusButton({ app, onStart }: { app: OpenTimeState; onStart(): void }) {
+function FocusButton({
+  app,
+  pomodoro,
+  onStart,
+}: {
+  app: OpenTimeState
+  pomodoro: ReturnType<typeof usePomodoro>
+  onStart(): void
+}) {
   const now = useNow(1000)
   const focus = app.status?.focus ?? null
+
+  if (pomodoro.run) {
+    const work = pomodoro.run.phase === 'work'
+    return (
+      <div className="rail-cta">
+        <div className={`focus-chip pomodoro-chip ${pomodoro.run.phase}`} title={pomodoro.run.label}>
+          <IconFocus size={16} />
+          <span className="nav-label">
+            <b>{clock(pomodoro.progress?.remainingSeconds ?? 0)}</b>
+            {pomodoro.run.paused ? 'paused' : work ? 'work' : 'break'}
+          </span>
+        </div>
+      </div>
+    )
+  }
 
   if (!focus) {
     return (
@@ -246,47 +276,6 @@ function FocusButton({ app, onStart }: { app: OpenTimeState; onStart(): void }) 
         <span className="nav-label">
           <b>{clock(progress.overrun ? progress.overrunSeconds : progress.remainingSeconds)}</b>
           {progress.overrun ? 'over' : 'left'}
-        </span>
-      </div>
-    </div>
-  )
-}
-
-/**
- * The way into the music timer. `active` is a mirror of `MusicMode`'s own
- * state — the timer itself is renderer-local, not `app.status` — kept here
- * purely so this button can show the countdown the same way `FocusButton`
- * does rather than going quiet the moment something is actually running.
- */
-function MusicButton({ active, onStart }: { active: ActiveMusicTimer | null; onStart(): void }) {
-  const now = useNow(1000)
-
-  if (!active) {
-    return (
-      <div className="rail-cta">
-        <button className="btn ghost music-start" onClick={onStart}>
-          <IconMusic size={16} />
-          <span className="nav-label">Music timer</span>
-        </button>
-      </div>
-    )
-  }
-
-  const progress = musicProgress(active, now)
-  const label = MUSIC_TRACKS.find((t) => t.id === active.track)?.label ?? active.track
-  return (
-    <div className="rail-cta">
-      <div className="focus-chip music-chip" title={label}>
-        <IconMusic size={16} />
-        <span className="nav-label">
-          {progress.openEnded ? (
-            <b>{clock(progress.elapsedSeconds)}</b>
-          ) : (
-            <>
-              <b>{clock(progress.overrun ? progress.overrunSeconds : progress.remainingSeconds)}</b>
-              {progress.overrun ? 'over' : 'left'}
-            </>
-          )}
         </span>
       </div>
     </div>

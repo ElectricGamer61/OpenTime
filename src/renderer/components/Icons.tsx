@@ -378,15 +378,56 @@ export function IconCheck(props: IconProps) {
   )
 }
 
-// ── Music timer ──────────────────────────────────────────────────────────────
+// ── Music player ─────────────────────────────────────────────────────────────
 
-/** Music — a pair of beamed notes, for the music timer. */
+/** Music — a pair of beamed notes. Lo-fi's track glyph and the player's own mark. */
 export function IconMusic(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M9 16.5V6.5l10-2v10" />
       <circle cx="7" cy="17.25" r="2.25" />
       <circle cx="17" cy="15.25" r="2.25" />
+    </Svg>
+  )
+}
+
+/** Whale song's track glyph — a swell, not a literal animal. */
+export function IconWave(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3.5 15c1.6-2.5 3.5-2.5 5 0s3.4 2.5 5 0 3.4-2.5 5-0.2" />
+      <path d="M3.5 9.5c1.6-2.5 3.5-2.5 5 0s3.4 2.5 5 0 3.4-2.5 5-0.2" />
+    </Svg>
+  )
+}
+
+/** Alpha waves' track glyph — a beat radiating outward. */
+export function IconPulse(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="5.5" />
+      <circle cx="12" cy="12" r="9" opacity="0.55" />
+    </Svg>
+  )
+}
+
+/** Classical's track glyph — piano keys. */
+export function IconPiano(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="6" width="16" height="12" rx="1.5" />
+      <path d="M8.5 6v7.5M12 6v7.5M15.5 6v7.5" />
+    </Svg>
+  )
+}
+
+/** Skip — to the next Pomodoro phase. */
+export function IconSkip(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6.5 6.2 15 12l-8.5 5.8Z" />
+      <path d="M17 6.5v11" strokeWidth="2" />
     </Svg>
   )
 }

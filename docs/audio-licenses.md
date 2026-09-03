@@ -1,9 +1,10 @@
-# Third-party audio in the Music timer
+# Third-party audio in the ambient music player
 
-The Music timer (`src/core/music.ts`, `src/renderer/lib/music.ts`) offers four
-tracks. Three are synthesised on the machine at runtime, exactly like the
-Focus ambient beds (`src/renderer/lib/ambient.ts`) — no file, no license to
-track. One is a real recording, bundled as a local asset and covered here.
+The ambient music player (`src/core/music.ts`, `src/renderer/lib/music.ts`)
+offers four tracks. Three are synthesised on the machine at runtime, exactly
+like the Focus ambient beds (`src/renderer/lib/ambient.ts`) — no file, no
+license to track. One is a real recording, bundled as a local asset and
+covered here.
 
 ## `src/renderer/assets/audio/whale.wav`
 
@@ -28,7 +29,7 @@ of the repository (Apache License 2.0). See the doc comment at the top of
 `src/renderer/lib/music.ts` for why: bundling somebody else's lofi beat or
 somebody else's Mozart recording is exactly the licensing problem the existing
 ambient beds were built to avoid, and a full orchestral recording is also a
-multi-megabyte asset for a five-track timer nobody asked to also grow the
+multi-megabyte asset for a four-track player nobody asked to also grow the
 installer. `classical` is an original short motif, not a rendition of any
 existing composition — it exists to answer the spirit of "Mozart or a clearly
 licensed equivalent" without either licensing a recording or overstating what

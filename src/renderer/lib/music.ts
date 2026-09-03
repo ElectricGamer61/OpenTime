@@ -1,5 +1,5 @@
 /**
- * Audio engine for the Music timer.
+ * Audio engine for the ambient music player.
  *
  * Three of the four tracks are **synthesised**, exactly like the Focus
  * ambient beds in `ambient.ts` and for the same reasons: no file to fetch, no

@@ -101,20 +101,29 @@ stamped with the session's name, and only the minutes nothing was observed for
 are filled in. So the session becomes one block on the timeline with the real
 apps still underneath it, and none of the time is counted twice.
 
+Pomodoro is a mode of the same session, not a second competing timer: pick
+25/5, 50/10, or a custom split, and work through repeating work/break cycles
+with pause, skip, and stop. Only the work phases are tracked — a break is a
+real rest, not a session with the label "break".
+
 The ambient beds are synthesised on your machine from filtered noise. There are
 no audio files in the bundle and nothing is streamed.
 
 ![Starting a focus session](docs/screenshots/focus.png)
 
-**Music timer.** Background listening with a countdown, separate from a focus
-session because it has no consequence for your tracked time at all — pick a
-track (lo-fi, whale song, alpha waves, or an original classical-style motif),
-pick a length or leave it open-ended, and it plays until you stop it. Three of
-the four tracks are generated on your machine the same way the ambient beds
-are; the one real recording is a public-domain NOAA field recording, bundled
-locally with its source and license on record in
-[`docs/audio-licenses.md`](docs/audio-licenses.md). A focus session and a
-music timer can run at once.
+**Ambient music player.** A small, always-available background player, not a
+timer and not a second "start something" button — pick a track (lo-fi, whale
+song, alpha waves, or an original classical-style motif), play or pause it,
+set a volume. It has no consequence for your tracked time at all: it never
+seals anything and never touches a day's sessions. Three of the four tracks
+are generated on your machine the same way the ambient beds are; the one real
+recording is a public-domain NOAA field recording, bundled locally with its
+source and license on record in
+[`docs/audio-licenses.md`](docs/audio-licenses.md). It is reachable from a
+small control on the rail and from inside Focus, and both point at the same
+player — starting a track from one and adjusting it from the other is one
+player, not two. A focus session (plain or Pomodoro) and the music player can
+run at once.
 
 **Reports over any range.** Week, month, quarter, year, or two dates you pick.
 Stepping is by the calendar — the month before March is February, not thirty days
@@ -506,7 +515,8 @@ npm test
 | `calendar.test.ts` | OAuth URL construction, refresh margin, event mapping, revoked grants, network and malformed-response failures |
 | `demo.test.ts` | the demo generator produces real, non-overlapping, deterministic days |
 | `focus.test.ts` | sealing a focus session: boundary splits, no time lost or duplicated, gap filling, idempotent re-seal |
-| `music.test.ts` | timer construction, track validation, progress/countdown/overrun arithmetic, open-ended timers |
+| `music.test.ts` | track validation, default track, volume clamping |
+| `pomodoro.test.ts` | presets, custom-plan validation and bounds, countdown arithmetic, phase alternation |
 | `range.test.ts` | calendar month/quarter/year arithmetic, custom-range clamping, DST-safe enumeration, the month grid |
 | `entries.test.ts` | folding adjacent sessions into calendar entries, lane assignment, focus-session grouping |
 | `palette.test.ts` | category-to-colour mapping, contrast-safe labels, edge-bar colour, light/dark RGB conversion |
@@ -587,5 +597,5 @@ language, scoring model and implementation here are original.
 
 Apache License 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Every
 bundled dependency is MIT; the one non-original asset (a public-domain NOAA
-recording used by the Music timer) is documented separately in
+recording used by the ambient music player) is documented separately in
 [`docs/audio-licenses.md`](docs/audio-licenses.md).

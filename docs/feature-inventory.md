@@ -370,11 +370,27 @@ deletes exactly the seeded days plus any demo-adapter rows sitting in real days.
 | | |
 |---|---|
 | Status | **Shipped** |
-| Where | `src/core/focus.ts`, `src/renderer/components/Focus.tsx`, `src/renderer/lib/ambient.ts` |
+| Where | `src/core/focus.ts`, `src/core/pomodoro.ts`, `src/renderer/components/Focus.tsx`, `src/renderer/lib/usePomodoro.ts`, `src/renderer/lib/ambient.ts` |
 
 Everything else in OpenTime observes. This is the one place the user *declares*:
 name the work, choose a length, optionally choose an ambient bed, and get a dock
-with a countdown, an extend button and a stop button.
+with a countdown, an extend button and a stop button. One primary "Start focus"
+entry point on the rail, not several competing timer buttons — the setup sheet
+has a Timer/Pomodoro toggle for which shape the session takes, not two separate
+actions.
+
+**Pomodoro mode is not a second tracker.** A work phase *is* an ordinary focus
+session, started and sealed through the exact same `startFocus`/`endFocus`
+primitives a plain timed session uses; a break phase has no session at all.
+Pausing seals whatever work has run so far and resuming opens a fresh session
+for the remainder — reusing "pause = seal, resume = reopen" instead of
+inventing a pause concept inside `ActiveFocus` is what guarantees no minute is
+ever double-counted or silently dropped, and it means `src/core/focus.ts` did
+not need to change at all to support Pomodoro. `src/core/pomodoro.ts` is pure
+phase/preset arithmetic (25/5, 50/10, or a validated custom split);
+`usePomodoro` in the renderer is the state machine that drives it through
+`OpenTimeState`. Skip and Stop each seal the current work phase first if one is
+running, the same way ending a plain session does.
 
 The design decision that matters is that **a focus session is not a second kind
 of record.** Capture keeps sampling throughout, unchanged. Ending the session
@@ -413,30 +429,35 @@ than "it reads which window has focus". Post-session self-rating is also absent 
 it exists in this product class to train a focus-detection model, and OpenTime
 sends nothing anywhere to train anything.
 
-## 19. Music timer
+## 19. Ambient music player
 
 | | |
 |---|---|
 | Status | **Shipped** |
-| Where | `src/core/music.ts`, `src/renderer/components/MusicTimer.tsx`, `src/renderer/lib/music.ts` |
+| Where | `src/core/music.ts`, `src/renderer/lib/useMusicPlayer.ts`, `src/renderer/components/MusicPlayer.tsx`, `src/renderer/lib/music.ts` |
 
-Background listening with a countdown: pick a track, pick a length (or
-"Until stopped"), and a dock floats over the app the same way the focus dock
-does. Four tracks — lo-fi, whale song, alpha waves, classical — chosen to
-answer a specific ask for "concentration audio" without reversing the reason
-Focus's ambient beds are synthesised (see §18): see
-[`docs/audio-licenses.md`](../docs/audio-licenses.md) for exactly what each
-track is and, for the one real recording, where it came from and under what
-license.
+A small, always-available background player — not a timer, and not a second
+"start something" button competing with Focus. Pick a track, play or pause it,
+set a volume; there is no length, no countdown, no dock. `useMusicPlayer` owns
+one shared engine instance for the whole app; `MusicPlayerControl` is just the
+trigger-and-popover UI around it, mounted twice on purpose (a small
+unobtrusive control on the rail, and again inside the Focus setup sheet and
+running docks) so starting a track from one place and adjusting it from the
+other is the same player, not two. Four tracks — lo-fi, whale song, alpha
+waves, classical — chosen to answer a specific ask for "concentration audio"
+without reversing the reason Focus's ambient beds are synthesised (see §18):
+see [`docs/audio-licenses.md`](../docs/audio-licenses.md) for exactly what
+each track is and, for the one real recording, where it came from and under
+what license.
 
 **Deliberately not a variant of a focus session.** A focus session is a claim
 over tracked time and has to survive the window reloading, so it lives in the
-main process. A music timer has no consequence for the timeline at all — it
-never seals anything, never touches a day's sessions, carries no category —
-so it lives entirely in the renderer. Closing the window or reloading just
-stops the sound; there is nothing to lose because nothing was ever recorded.
-The two can run at once — the docks are positioned to stack rather than
-overlap when they do.
+main process. The music player has no consequence for the timeline at all —
+it never seals anything, never touches a day's sessions, carries no category —
+so it lives entirely in the renderer, driven by a plain hook rather than IPC.
+Closing the window or reloading just stops the sound; there is nothing to
+lose because nothing was ever recorded. It can run alongside a Focus session
+(plain or Pomodoro) with no interaction between the two.
 
 Three of the four tracks are pre-rendered once through an `OfflineAudioContext`
 into a short `AudioBuffer` that then loops exactly like the Focus ambient

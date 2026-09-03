@@ -1421,6 +1421,87 @@ select option {
   padding-top: 48px;
 }
 
+/* Takes the tabs row's place when the grid is showing the week strip instead
+   of one day's grouping, which the tabs describe and the strip does not. */
+.grid-tabs-hint {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  margin-right: auto;
+}
+
+/* ── The week strip ─────────────────────────────────────────────────────── */
+
+.week-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--gap-2);
+  padding-top: 8px;
+}
+
+.week-day {
+  display: grid;
+  gap: 10px;
+  padding: 14px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+.week-day:hover {
+  background: var(--surface-2);
+}
+
+.week-day.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.week-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.week-day-name {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: var(--caps-ls);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.week-day.today .week-day-name {
+  color: var(--accent-hi);
+}
+
+.week-day-num {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.week-day-total {
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.week-day-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+
+.week-day-bar i {
+  display: block;
+  height: 100%;
+}
+
 /* ── The hour grid ──────────────────────────────────────────────────────── */
 
 .daygrid {
@@ -3414,7 +3495,7 @@ select option {
 }
 
 .btn.focus-start,
-.btn.music-start,
+.music-player-trigger,
 .focus-chip {
   width: 100%;
   justify-content: center;
@@ -3423,8 +3504,150 @@ select option {
   font-size: 12.5px;
 }
 
-.btn.music-start {
+/* Same bordered-pill language as `.focus-bed`, so the setup sheet and the
+   running docks read it as one more real control rather than a bare link
+   floating in the field. */
+.music-player-trigger {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-weight: 550;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.music-player-trigger:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.music-player-trigger.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+
+/* The rail trigger sits among plain ghost nav rows, not among bordered pill
+   buttons, so here alone it drops the border/fill and reads as one more
+   quiet rail control instead of a stray card. */
+.rail-music .music-player-trigger {
+  border-radius: var(--radius-sm);
+  border-color: transparent;
+  background: transparent;
+}
+
+.rail-music .music-player-trigger:hover {
+  background: var(--surface-3);
+}
+
+.rail-music .music-player-trigger.on {
+  background: transparent;
+  color: var(--accent-hi);
+}
+
+.rail-music {
   margin-top: 6px;
+}
+
+.music-player-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.music-player-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-hi);
+}
+
+/* Portalled to `document.body`, so it is positioned in fixed viewport
+   coordinates from the trigger's own bounding rect rather than from CSS. */
+.music-player-menu {
+  position: fixed;
+  z-index: 70;
+  display: grid;
+  gap: var(--gap-2);
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-float);
+  box-shadow: var(--shadow-float);
+  animation: float-in var(--fast) var(--ease) both;
+}
+
+.music-player-tracks {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.music-player-track {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 8px 2px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 550;
+  text-align: center;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.music-player-track span {
+  max-width: 100%;
+  line-height: 1.2;
+}
+
+.music-player-track:hover {
+  background: var(--surface-3);
+  color: var(--text-dim);
+}
+
+.music-player-track.on {
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+
+.music-player-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.music-player-now {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-dim);
+}
+
+.music-player-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-faint);
+}
+
+.music-player-volume input {
+  flex: 1;
 }
 
 .app.rail-collapsed .rail-cta {
@@ -3434,7 +3657,7 @@ select option {
 /* Collapsed, the button is the icon and nothing else — the label is clipped
    away everywhere else in the rail for the same reason. */
 .app.rail-collapsed .btn.focus-start .nav-label,
-.app.rail-collapsed .btn.music-start .nav-label,
+.app.rail-collapsed .music-player-trigger .nav-label,
 .app.rail-collapsed .focus-chip .nav-label {
   display: none;
 }
@@ -3466,6 +3689,19 @@ select option {
   color: var(--text-dim);
   font-weight: 500;
   font-size: 11px;
+}
+
+/* A break phase reads as a rest, not a second flavour of urgency — a cooler,
+   quieter chip rather than the accent used for everything else running. */
+.focus-chip.pomodoro-chip.break {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+  color: var(--text-dim);
+}
+
+.focus-chip.pomodoro-chip.break .nav-label,
+.focus-chip.pomodoro-chip.break .nav-label > :last-child {
+  color: var(--text-dim);
 }
 
 /* The setup and completion sheets are centred modals, not the right-hand
@@ -3633,25 +3869,57 @@ select option {
   flex: 0 0 auto;
 }
 
-/* Stacked above where the focus dock sits, so the two can never overlap when
-   a focus session and a music timer are both running at once. */
-.music-dock {
-  bottom: 84px;
+/* A break phase is a rest, not a second flavour of urgency the ring should
+   shout about — the ring itself is already cooled by `FocusRing`'s `tone`,
+   this just carries the same read onto the dock's border and the badge. */
+.pomodoro-dock.break {
+  border-color: var(--line-strong);
 }
 
-/* Stands in for the ring on an open-ended timer, which has no fraction to
-   draw — same footprint as `.focus-ring` so the dock does not reflow when a
-   timed track switches to "Until stopped". */
-.music-dock-mark {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+.pomodoro-dock.paused {
+  opacity: 0.82;
+}
+
+.pomodoro-phase-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: var(--caps-ls);
+  text-transform: uppercase;
+  vertical-align: middle;
   background: var(--accent-soft);
   color: var(--accent-hi);
+}
+
+.pomodoro-phase-badge.break {
+  background: var(--surface-3);
+  color: var(--text-dim);
+}
+
+.pomodoro-custom {
+  display: flex;
+  gap: var(--gap-2);
+}
+
+.pomodoro-custom label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.pomodoro-custom input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pomodoro-custom span {
+  color: var(--text-faint);
 }
 
 .focus-dock-text {
@@ -3775,18 +4043,6 @@ select option {
 
 .app.focus-running .grid-scroll {
   padding-bottom: 84px;
-}
-
-/* The music dock floats higher than the focus dock (see `.music-dock`) so the
-   two can stack, which means it alone — or both together — needs more
-   clearance than focus-running alone. Declared after `.focus-running` so it
-   wins on equal specificity when both classes are present at once. */
-.app.music-running .page {
-  padding-bottom: 160px;
-}
-
-.app.music-running .grid-scroll {
-  padding-bottom: 148px;
 }
 
 @keyframes dock-in {
