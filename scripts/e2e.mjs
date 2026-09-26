@@ -353,30 +353,58 @@ async function main() {
       ? pass('folded blocks carry a duration', `${folding.shown} of ${folding.blocks} blocks labelled with a duration`)
       : fail('folded blocks carry a duration', JSON.stringify(folding))
 
-    // ── 3b. Calendar > Week stays in Calendar and changes the selected week ─
-    // Regression: Week used to behave like Month/Year and navigate away to
-    // Reports. It must instead toggle the grid itself, in place.
-    const weekNav = await s.eval(`
-      const week = [...document.querySelectorAll('.range-seg button')].find(b => b.textContent.trim() === 'Week')
-      if (!week) return { err: 'no Week button on the calendar date bar' }
-      week.click(); await new Promise(r => setTimeout(r, 400))
-      const tabAfterWeek = document.querySelector('.nav-item.active')?.textContent.trim()
-      const days = document.querySelectorAll('.week-strip .week-day').length
-      // Click today's own tile — restores the day this suite started on
-      // rather than wandering the selected day off to whichever tile is
-      // first, which would break every test after this one.
-      const day = document.querySelector('.week-strip .week-day.today') || document.querySelector('.week-strip .week-day')
-      if (!day) return { err: 'week strip did not render any days', tabAfterWeek, days }
-      day.click(); await new Promise(r => setTimeout(r, 400))
-      const tabAfterDayClick = document.querySelector('.nav-item.active')?.textContent.trim()
-      const backToGrid = document.querySelectorAll('.daygrid .entry, .daygrid-hour').length > 0
-      return { tabAfterWeek, days, tabAfterDayClick, backToGrid }
+    // ── 3b. Week, Month and Year all stay in the Calendar ──────────────────
+    // Regression: Month and Year used to jump to Reports, and the week strip
+    // drew this week's days under last week's title after "Previous week".
+    const periods = await s.eval(`
+      const pick = async (label) => {
+        const b = [...document.querySelectorAll('.range-seg button')].find(x => x.textContent.trim() === label)
+        if (!b) return false
+        b.click(); await new Promise(r => setTimeout(r, 900))
+        return true
+      }
+      const tab = () => document.querySelector('.nav-item.active')?.textContent.trim()
+      const title = () => document.querySelector('.grid-date')?.textContent.trim()
+      const out = {}
+      if (!(await pick('Week'))) return { err: 'no Week button on the calendar date bar' }
+      const weekDays = () => [...document.querySelectorAll('.week-strip .week-day')].map(d => d.textContent.trim()).join('|')
+      out.week = { tab: tab(), days: document.querySelectorAll('.week-strip .week-day').length, title: title() }
+      const thisWeek = weekDays()
+      document.querySelector('.grid-datenav button[title="Previous week"]').click()
+      await new Promise(r => setTimeout(r, 1200))
+      out.week.prevTitle = title()
+      out.week.prevDaysDiffer = weekDays() !== thisWeek
+      document.querySelector('.grid-datenav button[title="Jump to today"]').click()
+      await new Promise(r => setTimeout(r, 900))
+      await pick('Month')
+      out.month = { tab: tab(), days: document.querySelectorAll('.month-day:not(.blank)').length, title: title() }
+      await pick('Year')
+      out.year = { tab: tab(), days: document.querySelectorAll('.heat-cell').length, title: title() }
+      // A past day in the month opens hour by hour, still in the Calendar.
+      await pick('Month')
+      const past = [...document.querySelectorAll('.month-day:not(.blank):not(.future)')].pop()
+      past?.click(); await new Promise(r => setTimeout(r, 900))
+      out.opened = { tab: tab(), range: document.querySelector('.range-seg button.on')?.textContent.trim(),
+                     grid: !!document.querySelector('.daygrid') }
+      // Back to today's day grid for every check after this one.
+      document.querySelector('.grid-datenav button[title="Jump to today"]')?.click()
+      await new Promise(r => setTimeout(r, 900))
+      return out
     `)
-    await shoot(s, '02b-calendar-week.png')
-    weekNav.err ? fail('Calendar > Week stays in Calendar', weekNav.err)
-      : weekNav.tabAfterWeek === 'Calendar' && weekNav.days === 7 && weekNav.tabAfterDayClick === 'Calendar' && weekNav.backToGrid
-        ? pass('Calendar > Week stays in Calendar', `${weekNav.days} days shown, day click returned to the grid`)
-        : fail('Calendar > Week stays in Calendar', JSON.stringify(weekNav))
+    await shoot(s, '02b-calendar-period.png')
+    if (periods.err) fail('Week, Month and Year stay in the Calendar', periods.err)
+    else {
+      const { week, month, year, opened } = periods
+      week.tab === 'Calendar' && week.days === 7 && week.prevTitle !== week.title && week.prevDaysDiffer
+        ? pass('Calendar week shows the week in its title, and steps back', `${week.title} → ${week.prevTitle}`)
+        : fail('Calendar week shows the week in its title, and steps back', JSON.stringify(week))
+      month.tab === 'Calendar' && month.days >= 28 && month.days <= 31 && year.tab === 'Calendar' && year.days >= 365
+        ? pass('Week, Month and Year stay in the Calendar', `${month.title}: ${month.days} days, ${year.title}: ${year.days} days`)
+        : fail('Week, Month and Year stay in the Calendar', JSON.stringify({ month, year }))
+      opened.tab === 'Calendar' && opened.range === 'Day' && opened.grid
+        ? pass('a day picked in Month opens hour by hour')
+        : fail('a day picked in Month opens hour by hour', JSON.stringify(opened))
+    }
 
     // ── 4. Correction: retag a block through the UI ────────────────────────
     const openDrawer = `
@@ -601,104 +629,104 @@ async function main() {
       : fail('the calendar stacks without collapsing the day', JSON.stringify(stacked))
 
     // ── 7. A focus session, start to finish ────────────────────────────────
+    // The sheet is deliberately small: a name, a length, blocking, Start. No
+    // sound or music in it; the music player is its own thing on the rail.
     const focus = await s.eval(`${REACT_SET}
       const start = [...document.querySelectorAll('.rail button')].find(b => /start focus/i.test(b.textContent))
       if (!start) return { err: 'no Start focus button on the rail' }
       start.click(); await new Promise(r => setTimeout(r, 600))
       const sheet = document.querySelector('.focus-sheet')
       if (!sheet) return { err: 'focus sheet did not open' }
+      const lengths = [...sheet.querySelectorAll('.focus-lengths button')].map(b => b.textContent.trim())
+      const noAudio = !sheet.querySelector('.music-player-trigger, .music-menu') && !/\\bSound\\b|Play music/.test(sheet.textContent)
       setVal(document.querySelector('#focus-goal'), 'QA focus block')
       await new Promise(r => setTimeout(r, 200))
-      const go = [...sheet.querySelectorAll('button')].find(b => /-minute session$/.test(b.textContent.trim()))
-      if (!go) return { err: 'no start button on the focus sheet' }
+      const go = [...sheet.querySelectorAll('.focus-sheet-foot button')].find(b => /start focusing/i.test(b.textContent))
+      if (!go) return { err: 'no Start focusing button on the sheet' }
       go.click(); await new Promise(r => setTimeout(r, 1200))
       const dock = document.querySelector('.focus-dock')
       if (!dock) return { err: 'focus dock did not appear after starting' }
       const label = dock.querySelector('.focus-dock-label')?.textContent
+      const dockButtons = [...dock.querySelectorAll('button')].map(b => b.textContent.trim())
       const status = await window.opentime.getStatus()
-      const extend = [...dock.querySelectorAll('button')].find(b => /15m/.test(b.textContent))
+      const extend = [...dock.querySelectorAll('button')].find(b => /15 min/.test(b.textContent))
       const plannedBefore = status.focus?.plannedSeconds
       extend.click(); await new Promise(r => setTimeout(r, 900))
       const plannedAfter = (await window.opentime.getStatus()).focus?.plannedSeconds
-      ;[...document.querySelectorAll('.focus-dock button')].find(b => /end session/i.test(b.textContent)).click()
+      ;[...document.querySelectorAll('.focus-dock button')].find(b => /^End$/.test(b.textContent.trim())).click()
       await new Promise(r => setTimeout(r, 1600))
       // A session this short is refused by the store on purpose. What matters
       // is that it says so rather than vanishing: either a report or a reason.
       const report = document.querySelector('.focus-sheet.done')
       const closed = !document.querySelector('.focus-dock')
       const reported = report?.getAttribute('aria-label')
-      const said = report?.textContent.replace(/\s+/g, ' ').trim().slice(0, 90)
       if (report) [...report.querySelectorAll('button')].find(b => /^(Done|Close)$/.test(b.textContent.trim()))?.click()
       await new Promise(r => setTimeout(r, 500))
-      return { label, plannedBefore, plannedAfter, reported, said, closed,
+      return { lengths, noAudio, label, dockButtons, plannedBefore, plannedAfter, reported, closed,
                dismissed: !document.querySelector('.focus-sheet'),
                after: (await window.opentime.getStatus()).focus }
     `)
     focus.err ? fail('run a focus session end to end', focus.err)
-      : focus.label === 'QA focus block' && focus.plannedAfter === focus.plannedBefore + 900 &&
+      : focus.lengths.join(',') === '25 min,45 min,60 min,90 min,Pomodoro' && focus.noAudio &&
+        focus.dockButtons.length === 2 &&
+        focus.label === 'QA focus block' && focus.plannedAfter === focus.plannedBefore + 900 &&
         focus.reported && focus.closed && focus.dismissed && !focus.after
-        ? pass('run a focus session end to end', `started, extended by 15m, ended with "${focus.reported}"`)
+        ? pass('run a focus session end to end', `simple sheet, started, extended by 15 min, ended with "${focus.reported}"`)
         : fail('run a focus session end to end', JSON.stringify(focus))
 
-    // ── 7b. The ambient music player, not a timer ──────────────────────────
-    // It never touches `window.opentime` at all — it is renderer-only by
-    // design — so the check is purely DOM-level: open it from the rail,
-    // switch tracks, toggle play, move the volume, and confirm the day's
-    // stored sessions are untouched (it must never create tracked time).
+    // ── 7b. The music player, on its own ───────────────────────────────────
+    // Renderer-only by design, so the check is DOM-level: open it from the
+    // rail, play a track, pause it, switch to an ambient sound, move the
+    // volume, and confirm the day's stored sessions are untouched.
     const music = await s.eval(`${REACT_SET}
       const key = ${JSON.stringify(boot.today.dayKey)}
       const before = (await window.opentime.getDay(key)).sessions.length
       const trigger = document.querySelector('.rail-music .music-player-trigger')
       if (!trigger) return { err: 'no music trigger on the rail' }
       trigger.click(); await new Promise(r => setTimeout(r, 300))
-      const menu = document.querySelector('.music-player-menu')
+      const menu = document.querySelector('.music-menu')
       if (!menu) return { err: 'music popover did not open' }
-      const tracks = menu.querySelectorAll('.music-player-track').length
-      const whale = [...menu.querySelectorAll('.music-player-track')].find(b => /Whale song/.test(b.textContent))
-      if (!whale) return { err: 'no Whale song track option' }
-      whale.click(); await new Promise(r => setTimeout(r, 300))
-      const playingAfterPick = menu.querySelector('.music-player-controls .icon-btn.on') !== null
-      const nowPlaying = menu.querySelector('.music-player-now')?.textContent
-      const toggle = menu.querySelector('.music-player-controls .icon-btn')
-      toggle.click(); await new Promise(r => setTimeout(r, 200))
-      const pausedAfterToggle = menu.querySelector('.music-player-controls .icon-btn.on') === null
-      const vol = menu.querySelector('.music-player-volume input')
-      setVal(vol, '0.3')
+      const row = (label) => [...menu.querySelectorAll('.music-row')].find(b => b.textContent.trim() === label)
+      const sounds = [...menu.querySelectorAll('.music-row')].map(b => b.textContent.trim())
+      row('Whale song').click(); await new Promise(r => setTimeout(r, 300))
+      const playing = row('Whale song').classList.contains('on')
+      const railSays = trigger.textContent.trim()
+      row('Whale song').click(); await new Promise(r => setTimeout(r, 200))
+      const paused = !menu.querySelector('.music-row.on')
+      row('Rain').click(); await new Promise(r => setTimeout(r, 300))
+      const rain = row('Rain').classList.contains('on') && !row('Whale song').classList.contains('on')
+      setVal(menu.querySelector('.music-volume input'), '0.3')
       await new Promise(r => setTimeout(r, 150))
+      row('Rain').click(); await new Promise(r => setTimeout(r, 200))
       document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
       await new Promise(r => setTimeout(r, 200))
       const after = (await window.opentime.getDay(key)).sessions.length
-      return { tracks, nowPlaying, playingAfterPick, pausedAfterToggle,
-               closed: !document.querySelector('.music-player-menu'),
+      return { sounds, playing, railSays, paused, rain, closed: !document.querySelector('.music-menu'),
                untouched: after === before }
     `)
-    music.err ? fail('the ambient music player never tracks time', music.err)
-      : music.tracks === 4 && /Whale song/.test(music.nowPlaying || '') && music.playingAfterPick &&
-        music.pausedAfterToggle && music.closed && music.untouched
-        ? pass('the ambient music player never tracks time', `picked ${music.nowPlaying}, paused, volume set, day untouched`)
-        : fail('the ambient music player never tracks time', JSON.stringify(music))
+    music.err ? fail('the music player plays music and sounds, and never tracks time', music.err)
+      : music.sounds.length === 8 && music.playing && music.railSays === 'Whale song' && music.paused &&
+        music.rain && music.closed && music.untouched
+        ? pass('the music player plays music and sounds, and never tracks time', 'Whale song → paused → Rain, volume set, day untouched')
+        : fail('the music player plays music and sounds, and never tracks time', JSON.stringify(music))
 
     // ── 7c. Pomodoro: work is a real focus session, break is not ───────────
     // Pause seals the in-progress work session and resume opens a fresh one
-    // for the remainder — the same primitives a plain focus session uses, so
-    // this only has to prove the phases wire up correctly, not re-prove
-    // sealing itself (that is `tests/focus.test.ts`'s job).
+    // for the remainder (the same primitives a plain focus session uses), so
+    // this only has to prove the phases wire up correctly.
     const pomodoro = await s.eval(`${REACT_SET}
       const start = [...document.querySelectorAll('.rail button')].find(b => /start focus/i.test(b.textContent))
       if (!start) return { err: 'no Start focus button on the rail' }
       start.click(); await new Promise(r => setTimeout(r, 600))
       const sheet = document.querySelector('.focus-sheet')
       if (!sheet) return { err: 'focus sheet did not open' }
-      const pomodoroTab = [...sheet.querySelectorAll('.focus-mode-seg button')].find(b => /Pomodoro/.test(b.textContent))
-      if (!pomodoroTab) return { err: 'no Pomodoro tab on the focus sheet' }
-      pomodoroTab.click(); await new Promise(r => setTimeout(r, 150))
+      const option = [...sheet.querySelectorAll('.focus-lengths button')].find(b => b.textContent.trim() === 'Pomodoro')
+      if (!option) return { err: 'no Pomodoro length on the focus sheet' }
+      option.click(); await new Promise(r => setTimeout(r, 150))
+      const hint = sheet.querySelector('.focus-hint')?.textContent || ''
       setVal(document.querySelector('#focus-goal'), 'QA pomodoro block')
       await new Promise(r => setTimeout(r, 150))
-      const classic = [...sheet.querySelectorAll('.focus-durations button')].find(b => b.textContent.trim() === '25 / 5')
-      if (!classic) return { err: 'no 25 / 5 preset' }
-      classic.click(); await new Promise(r => setTimeout(r, 150))
-      const go = [...sheet.querySelectorAll('.focus-sheet-foot button')].find(b => /start pomodoro/i.test(b.textContent))
-      if (!go) return { err: 'no Start Pomodoro button' }
+      const go = [...sheet.querySelectorAll('.focus-sheet-foot button')].find(b => /start focusing/i.test(b.textContent))
       go.click(); await new Promise(r => setTimeout(r, 1200))
       let dock = document.querySelector('.pomodoro-dock')
       if (!dock) return { err: 'pomodoro dock did not appear after starting' }
@@ -721,7 +749,8 @@ async function main() {
       const stop = [...dock.querySelectorAll('button')].find(b => /^Stop$/.test(b.textContent.trim()))
       stop.click(); await new Promise(r => setTimeout(r, 600))
       return {
-        startedOnWork: /\\bwork\\b/.test(phase1) && !!focusDuringWork,
+        explained: /25 minutes of focus, then a 5-minute break/.test(hint),
+        startedOnWork: /\\bwork\\b/.test(phase1) && focusDuringWork?.plannedSeconds === 1500,
         sealedOnPause: /\\bpaused\\b/.test(pausedClass) && !focusWhilePaused,
         reopenedOnResume: !!focusAfterResume,
         movedToBreak: /\\bbreak\\b/.test(phaseAfterSkip) && !focusOnBreak,
@@ -729,8 +758,8 @@ async function main() {
       }
     `)
     pomodoro.err ? fail('run a Pomodoro cycle end to end', pomodoro.err)
-      : pomodoro.startedOnWork && pomodoro.sealedOnPause && pomodoro.reopenedOnResume &&
-        pomodoro.movedToBreak && pomodoro.stoppedCleanly
+      : pomodoro.explained && pomodoro.startedOnWork && pomodoro.sealedOnPause &&
+        pomodoro.reopenedOnResume && pomodoro.movedToBreak && pomodoro.stoppedCleanly
         ? pass('run a Pomodoro cycle end to end', 'work → pause (sealed) → resume (reopened) → skip to break → stop')
         : fail('run a Pomodoro cycle end to end', JSON.stringify(pomodoro))
 

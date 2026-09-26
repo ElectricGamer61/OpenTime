@@ -99,6 +99,12 @@ Two things are worth naming:
   overlap. The grouping (category / project / app) is a tab above the grid and
   drives the summary column's donut at the same time.
 
+**Week, month and year stay on the calendar.** Week is seven day cards, Month a
+real calendar, Year a cell per day; the arrows step a whole period, and
+clicking any past day opens it hour by hour. Month and Year used to jump to
+Reports, which read as the button being broken. The days drawn always come
+from the same range as the title above them.
+
 **Not modelled:** a per-entry billable amount. There are no rates and no clients
 in the data model (§5 — projects are the closest concept), so the slot a
 commercial tracker puts money in is simply absent rather than filled with a
@@ -384,14 +390,15 @@ deletes exactly the seeded days plus any demo-adapter rows sitting in real days.
 | | |
 |---|---|
 | Status | **Shipped** |
-| Where | `src/core/focus.ts`, `src/core/pomodoro.ts`, `src/renderer/components/Focus.tsx`, `src/renderer/lib/usePomodoro.ts`, `src/renderer/lib/ambient.ts` |
+| Where | `src/core/focus.ts`, `src/core/pomodoro.ts`, `src/renderer/components/Focus.tsx`, `src/renderer/lib/usePomodoro.ts` |
 
-Everything else in OpenTime observes. This is the one place the user *declares*:
-name the work, choose a length, optionally choose an ambient bed, and get a dock
-with a countdown, an extend button and a stop button. One primary "Start focus"
-entry point on the rail, not several competing timer buttons — the setup sheet
-has a Timer/Pomodoro toggle for which shape the session takes, not two separate
-actions.
+Everything else in OpenTime observes. This is the one place the user *declares*.
+One "Start focus" button opens one short sheet: what you are working on
+(optional), how long (25, 45, 60 or 90 minutes, or Pomodoro, which is just
+another length), a switch for distraction blocking, and Start. Then a small
+dock with the countdown, "+15 min" and "End". Sound and music are deliberately
+not in it: they were once two separate audio controls inside this sheet, which
+turned one decision into five. Music lives on the rail (§19).
 
 **Pomodoro mode is not a second tracker.** A work phase *is* an ordinary focus
 session, started and sealed through the exact same `startFocus`/`endFocus`
@@ -401,7 +408,8 @@ for the remainder — reusing "pause = seal, resume = reopen" instead of
 inventing a pause concept inside `ActiveFocus` is what guarantees no minute is
 ever double-counted or silently dropped, and it means `src/core/focus.ts` did
 not need to change at all to support Pomodoro. `src/core/pomodoro.ts` is pure
-phase/preset arithmetic (25/5, 50/10, or a validated custom split);
+phase/preset arithmetic (the sheet offers 25/5; the core also validates other
+splits);
 `usePomodoro` in the renderer is the state machine that drives it through
 `OpenTimeState`. Skip and Stop each seal the current work phase first if one is
 running, the same way ending a plain session does.
@@ -430,36 +438,31 @@ Three details:
   paused engine would record nothing and hand back an empty block forty-five
   minutes later.
 
-**Ambient sound is synthesised, never bundled or streamed.** Five beds built at
-runtime from filtered noise through the Web Audio API. No audio files (the
-renderer's CSP allows no external sources), no licensing question, and no
-network. Filtered noise is also the honest version of what these are for:
-something with no detail for attention to land on.
-
 Distraction blocking is its own section (§21). **Not modelled:** post-session
 self-rating. It exists in this product class to train a focus-detection model,
 and OpenTime sends nothing anywhere to train anything.
 
-## 19. Ambient music player
+## 19. Music and sounds
 
 | | |
 |---|---|
 | Status | **Shipped** |
-| Where | `src/core/music.ts`, `src/renderer/lib/useMusicPlayer.ts`, `src/renderer/components/MusicPlayer.tsx`, `src/renderer/lib/music.ts` |
+| Where | `src/core/music.ts`, `src/renderer/lib/useMusicPlayer.ts`, `src/renderer/components/MusicPlayer.tsx`, `src/renderer/lib/music.ts`, `src/renderer/lib/ambient.ts` |
 
-A small, always-available background player — not a timer, and not a second
-"start something" button competing with Focus. Pick a track, play or pause it,
-set a volume; there is no length, no countdown, no dock. `useMusicPlayer` owns
-one shared engine instance for the whole app; `MusicPlayerControl` is just the
-trigger-and-popover UI around it, mounted twice on purpose (a small
-unobtrusive control on the rail, and again inside the Focus setup sheet and
-running docks) so starting a track from one place and adjusting it from the
-other is the same player, not two. Four tracks — lo-fi, whale song, alpha
-waves, classical — chosen to answer a specific ask for "concentration audio"
-without reversing the reason Focus's ambient beds are synthesised (see §18):
-see [`docs/audio-licenses.md`](../docs/audio-licenses.md) for exactly what
-each track is and, for the one real recording, where it came from and under
-what license.
+One button on the rail, apart from Focus on purpose. One short list in two
+groups: **Music** (lo-fi, whale song, alpha waves, classical) and **Sounds**
+(rain, waves, room tone, deep hum). Click one to play it, click it again to
+pause, set a volume; there is no length, no countdown, no dock. While
+something plays, the rail button names it. `useMusicPlayer` owns the one
+player (two engines underneath, because tracks and filtered-noise sounds are
+made differently, but only one sound at a time); `MusicPlayerControl` is the
+trigger and popover.
+
+**Everything but one recording is synthesised.** The sounds and three of the
+tracks are built at runtime through the Web Audio API: no audio files (the
+renderer's CSP allows no external sources), no licensing question, no network.
+The whale song is a public-domain NOAA recording bundled locally; see
+[`docs/audio-licenses.md`](../docs/audio-licenses.md).
 
 **Deliberately not a variant of a focus session.** A focus session is a claim
 over tracked time and has to survive the window reloading, so it lives in the

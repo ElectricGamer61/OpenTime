@@ -97,7 +97,7 @@ too if you want it gone.
 
 **Focus**
 - Focus sessions: name the task, set a length, extend or stop anytime.
-- Pomodoro: 25/5, 50/10 or your own split.
+- Pomodoro: 25 minutes of focus, 5 minutes of break, repeating.
 - Distraction blocking during focus sessions (optional): a list of sites and
   apps to cover, with "Allow 5 minutes" when you really need one.
 - Break reminders after a long stretch without a break (optional).
@@ -194,22 +194,20 @@ distraction and away.
 rather than records, so time in meetings and time in deep work are visible
 against each other.
 
-**Focus sessions.** Start a session, name what you are about to do, pick a
-length and — if it helps — an ambient bed, and the app gets out of the way: a
-dock with the countdown, a way to add fifteen minutes, and a way to stop. It is
+**Focus sessions.** Click **Start focus**, optionally name what you are about
+to do, pick 25, 45, 60 or 90 minutes or Pomodoro, and the app gets out of the
+way: a small bar with the countdown, a way to add fifteen minutes, and a way to
+stop. Blocking distractions is one switch on the same sheet. It is
 not a second tracker. Capture runs throughout exactly as it always does, and
 ending the session *seals* it — the rows already recorded for those minutes are
 stamped with the session's name, and only the minutes nothing was observed for
 are filled in. So the session becomes one block on the timeline with the real
 apps still underneath it, and none of the time is counted twice.
 
-Pomodoro is a mode of the same session, not a second competing timer: pick
-25/5, 50/10, or a custom split, and work through repeating work/break cycles
-with pause, skip, and stop. Only the work phases are tracked — a break is a
-real rest, not a session with the label "break".
-
-The ambient beds are synthesised on your machine from filtered noise. There are
-no audio files in the bundle and nothing is streamed.
+Pomodoro is just another length, not a second competing timer: 25 minutes of
+focus, then a 5-minute break, repeating, with pause, skip, and stop. Only the
+focus phases are tracked; a break is a real rest, not a session labelled
+"break".
 
 ![Starting a focus session](docs/screenshots/focus.png)
 
@@ -222,19 +220,15 @@ lifts the moment something else is in front. "Allow 5 minutes" lets one through;
 "End focus session" ends it. OpenTime never closes or kills anything: it cannot
 lose your work, and it needs no admin rights. See `src/core/blocking.ts`.
 
-**Ambient music player.** A small, always-available background player, not a
-timer and not a second "start something" button — pick a track (lo-fi, whale
-song, alpha waves, or an original classical-style motif), play or pause it,
-set a volume. It has no consequence for your tracked time at all: it never
-seals anything and never touches a day's sessions. Three of the four tracks
-are generated on your machine the same way the ambient beds are; the one real
-recording is a public-domain NOAA field recording, bundled locally with its
-source and license on record in
-[`docs/audio-licenses.md`](docs/audio-licenses.md). It is reachable from a
-small control on the rail and from inside Focus, and both point at the same
-player — starting a track from one and adjusting it from the other is one
-player, not two. A focus session (plain or Pomodoro) and the music player can
-run at once.
+**Music.** Its own button on the sidebar, separate from Focus on purpose:
+starting to focus is one decision, what to listen to is another. One short
+list: music (lo-fi, whale song, alpha waves, an original classical-style motif)
+and sounds (rain, waves, room tone, deep hum). Click one to play it, click it
+again to pause, set the volume. It never touches your tracked time. Everything
+except the whale song is generated on your machine from scratch; the whale
+song is a public-domain NOAA field recording, bundled locally with its source
+and license on record in [`docs/audio-licenses.md`](docs/audio-licenses.md).
+Nothing is streamed.
 
 **Reports over any range.** Week, month, quarter, year, or two dates you pick.
 Stepping is by the calendar — the month before March is February, not thirty days

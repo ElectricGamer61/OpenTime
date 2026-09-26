@@ -34,20 +34,21 @@ const click = (selector, text) => `
   })()
 `
 
+/** Types a name into the focus sheet's "What are you working on?" field. */
+const typeGoal = (text) => `(() => {
+  const el = document.querySelector('#focus-goal')
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+  set.call(el, ${JSON.stringify(text)})
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  return true
+})()`
+
 /** Each shot is a list of steps run from a freshly reloaded renderer. */
 const SHOTS = [
   { name: 'focus-setup', steps: [click('.focus-start')] },
   {
     name: 'focus-running',
-    steps: [click('.focus-start'), `document.querySelector('#focus-goal').value`, click('.focus-sheet-foot .btn.primary')],
-  },
-  {
-    name: 'focus-sound',
-    steps: [
-      click('.focus-start'),
-      click('.focus-sheet-foot .btn.primary'),
-      click('.focus-sound-wrap .icon-btn'),
-    ],
+    steps: [click('.focus-start'), typeGoal('Write the report'), click('.focus-sheet-foot .btn.primary')],
   },
   {
     name: 'reports-month',
@@ -61,18 +62,14 @@ const SHOTS = [
     name: 'reports-custom',
     steps: [click('.nav-item', 'Reports'), click('.range-bar .seg button', 'Custom')],
   },
+  { name: 'calendar-week', steps: [click('.range-seg button', 'Week')] },
+  { name: 'calendar-month', steps: [click('.range-seg button', 'Month')] },
+  { name: 'calendar-year', steps: [click('.range-seg button', 'Year')] },
   {
     name: 'focus-complete',
     steps: [
       click('.focus-start'),
-      `(() => {
-        const el = document.querySelector('#focus-goal')
-        const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-        set.call(el, 'Ship the billing fix')
-        el.dispatchEvent(new Event('input', { bubbles: true }))
-        return true
-      })()`,
-      click('.seg.focus-durations button', '15m'),
+      typeGoal('Write the report'),
       click('.focus-sheet-foot .btn.primary'),
       6000,
       click('.focus-dock-actions .btn.danger'),
@@ -83,13 +80,7 @@ const SHOTS = [
     name: 'focus-timeline',
     steps: [
       click('.focus-start'),
-      `(() => {
-        const el = document.querySelector('#focus-goal')
-        const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-        set.call(el, 'Ship the billing fix')
-        el.dispatchEvent(new Event('input', { bubbles: true }))
-        return true
-      })()`,
+      typeGoal('Write the report'),
       click('.focus-sheet-foot .btn.primary'),
       6000,
       click('.focus-dock-actions .btn.danger'),
@@ -98,40 +89,28 @@ const SHOTS = [
     ],
   },
   {
-    // The one README needs: a session running over the calendar it will land in.
+    // The one README needs: the start sheet over the calendar it will land in.
     name: 'focus',
-    steps: [
-      click('.focus-start'),
-      `(() => {
-        const el = document.querySelector('#focus-goal')
-        const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
-        set.call(el, 'Ship the billing fix')
-        el.dispatchEvent(new Event('input', { bubbles: true }))
-        return true
-      })()`,
-      click('.focus-beds button', 'Rain'),
-    ],
+    steps: [click('.focus-start'), typeGoal('Write the report')],
   },
   { name: 'dashboard-focus', steps: [click('.nav-item', 'Dashboard')] },
   { name: 'settings-privacy', steps: [click('.nav-item', 'Settings'), click('.settings-nav button', 'Privacy')] },
   { name: 'goals', steps: [click('.nav-item', 'Goals')] },
   {
-    // The rail's small unobtrusive player, opened — not a timer, just a
-    // track picker, play/pause, and a volume slider.
+    // The rail's music player, opened, with a sound playing.
     name: 'music-player',
-    steps: [click('.music-player-trigger')],
+    steps: [click('.music-player-trigger'), click('.music-row', 'Rain')],
   },
   {
     name: 'focus-pomodoro-setup',
-    steps: [click('.focus-start'), click('.focus-mode-seg button', 'Pomodoro')],
+    steps: [click('.focus-start'), click('.focus-lengths button', 'Pomodoro')],
   },
   {
-    // Work is a real focus session; the dock shows the phase, the ring, and
-    // the same embedded music control the plain timer dock has.
+    // Work is a real focus session; the dock shows the phase and the ring.
     name: 'focus-pomodoro-running',
     steps: [
       click('.focus-start'),
-      click('.focus-mode-seg button', 'Pomodoro'),
+      click('.focus-lengths button', 'Pomodoro'),
       click('.focus-sheet-foot .btn.primary'),
     ],
   },

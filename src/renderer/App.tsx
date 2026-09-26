@@ -25,7 +25,6 @@ import {
 import { MusicPlayerControl } from './components/MusicPlayer'
 import { Onboarding } from './components/Onboarding'
 import { focusProgress } from '../core/focus'
-import type { RangeKind } from '../core/range'
 import type { FeedbackKind } from '../shared/ipc'
 import { clock, duration } from './lib/format'
 import { useMusicPlayer } from './lib/useMusicPlayer'
@@ -81,12 +80,10 @@ export function App() {
   const [tab, setTab] = useState<Tab>('calendar')
   const [collapsed, setCollapsed] = useState(false)
   const [focusSetup, setFocusSetup] = useState(false)
-  /** One instance, shared by the rail control and the buttons inside Focus — see `MusicPlayer.tsx`. */
+  /** The one music player, on the rail. Deliberately not part of Focus. */
   const musicPlayer = useMusicPlayer()
   /** One instance, shared by `FocusMode` and the rail chip below — see `usePomodoro`. */
   const pomodoro = usePomodoro(app)
-  /** Which range Reports opens on when the calendar sends you there. */
-  const [reportRange, setReportRange] = useState<RangeKind>('week')
 
   // Every colour is declared once with `light-dark()`, so choosing a theme is
   // only a matter of what `color-scheme` the root resolves to: no attribute
@@ -160,7 +157,7 @@ export function App() {
 
           <FocusButton app={app} pomodoro={pomodoro} onStart={() => setFocusSetup(true)} />
           <div className="rail-cta rail-music">
-            <MusicPlayerControl player={musicPlayer} label="Music" />
+            <MusicPlayerControl player={musicPlayer} />
           </div>
           <RailFooter app={app} />
         </nav>
@@ -177,10 +174,6 @@ export function App() {
               <CalendarView
                 app={app}
                 onCustomize={() => setTab('settings')}
-                onOpenReports={(kind) => {
-                  setReportRange(kind)
-                  setTab('reports')
-                }}
               />
             ) : (
               <div className="page">
@@ -197,15 +190,7 @@ export function App() {
                   <GoalsView app={app} onOpenDay={() => setTab('calendar')} />
                 ) : null}
                 {tab === 'reports' ? (
-                  <ReportsView
-                    app={app}
-                    /* Keyed so arriving from the calendar's range control
-                       actually re-opens on that range rather than keeping
-                       whatever the view was last left on. */
-                    key={reportRange}
-                    initialRange={reportRange}
-                    onOpenDay={() => setTab('calendar')}
-                  />
+                  <ReportsView app={app} onOpenDay={() => setTab('calendar')} />
                 ) : null}
                 {tab === 'settings' ? <SettingsView app={app} /> : null}
               </div>
@@ -217,7 +202,6 @@ export function App() {
       <FocusMode
         app={app}
         pomodoro={pomodoro}
-        musicPlayer={musicPlayer}
         open={focusSetup}
         onOpenChange={setFocusSetup}
         onOpenCalendar={() => setTab('calendar')}

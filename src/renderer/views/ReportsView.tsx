@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { summarizeDay, summarizeWeek, type DaySummary } from '../../core/aggregate'
-import { dayKey, dayStartTs, parseYmdLocal } from '../../core/day'
+import { dayKey, dayStartTs } from '../../core/day'
 import {
-  monthGrid,
   normalizeCustom,
   rangeFor,
   rangeKeys,
@@ -21,8 +20,9 @@ import {
   IconEmptyTimeline,
   IconRange,
 } from '../components/Icons'
+import { HeatGrid, MonthCalendar } from '../components/RangeGrids'
 import { RefreshButton } from '../components/RefreshButton'
-import { duration, longDate, percent, weekdayShort } from '../lib/format'
+import { duration, longDate, percent } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
 import type { DayPayload } from '../../shared/ipc'
 
@@ -46,11 +46,9 @@ const CHART_MAX_DAYS = 45
 
 export function ReportsView({
   app,
-  initialRange,
   onOpenDay,
 }: {
   app: OpenTimeState
-  initialRange?: RangeKind
   onOpenDay(): void
 }) {
   const settings = app.settings
@@ -58,7 +56,7 @@ export function ReportsView({
     () => dayKey(Date.now(), settings?.dayStartHour ?? 4),
     [settings?.dayStartHour]
   )
-  const [range, setRange] = useState<DayRange>(() => rangeFor(initialRange || 'week', today))
+  const [range, setRange] = useState<DayRange>(() => rangeFor('week', today))
   const [payloads, setPayloads] = useState<DayPayload[] | null>(null)
   const requestId = useRef(0)
 
@@ -251,6 +249,7 @@ export function ReportsView({
               <HeatGrid
                 days={days}
                 selected={app.selectedDay}
+                todayKey={today}
                 onSelect={(key) => {
                   app.selectDay(key)
                   onOpenDay()
@@ -335,6 +334,7 @@ export function ReportsView({
                 range={range}
                 days={days}
                 selected={app.selectedDay}
+                todayKey={today}
                 onSelect={(key) => {
                   app.selectDay(key)
                   onOpenDay()
@@ -345,147 +345,5 @@ export function ReportsView({
         </div>
       )}
     </>
-  )
-}
-
-/** Shared scale for both grids: a day's share of the busiest day in range. */
-function useHeat(days: DaySummary[]) {
-  return useMemo(() => {
-    const byKey = new Map(days.map((d) => [d.dayKey, d]))
-    const max = Math.max(1, ...days.map((d) => d.totalSeconds))
-    return { byKey, max }
-  }, [days])
-}
-
-/**
- * A cell per day laid out in week columns, for ranges too long for a column
- * chart.
- *
- * Deliberately not a column chart with 365 one-pixel bars: at that width the
- * chart cannot be read *or* clicked. Weeks run down the columns rather than
- * across the rows so a year is seven rows tall instead of fifty-two, and so a
- * weekday reads as a row — which is the pattern anyone scanning a year is
- * actually looking for.
- */
-function HeatGrid({
-  days,
-  selected,
-  onSelect,
-}: {
-  days: DaySummary[]
-  selected: string
-  onSelect(key: string): void
-}) {
-  const { max } = useHeat(days)
-  const months = useMemo(() => {
-    // One label per month, placed on the column its first day falls in.
-    const out: Array<{ label: string; column: number }> = []
-    let lead = 0
-    days.forEach((d, index) => {
-      const date = parseYmdLocal(d.dayKey)
-      if (index === 0) lead = date.getDay()
-      if (date.getDate() !== 1 && index !== 0) return
-      out.push({
-        label: date.toLocaleDateString(undefined, { month: 'short' }),
-        column: Math.floor((index + lead) / 7) + 1,
-      })
-    })
-    return out
-  }, [days])
-
-  return (
-    <div className="heat-wrap">
-      <div className="heat-months">
-        {months.map((m) => (
-          <span key={`${m.label}-${m.column}`} style={{ gridColumn: m.column }}>
-            {m.label}
-          </span>
-        ))}
-      </div>
-      <div className="heat-grid">
-        {days.map((d, index) => (
-          <button
-            key={d.dayKey}
-            className={`heat-cell${d.dayKey === selected ? ' on' : ''}${
-              d.totalSeconds ? '' : ' empty'
-            }`}
-            style={
-              {
-                '--heat': (d.totalSeconds / max).toFixed(3),
-                // Only the first cell needs placing; the rest flow down the
-                // column and wrap to the next week on their own.
-                ...(index === 0 ? { gridRow: parseYmdLocal(d.dayKey).getDay() + 1 } : {}),
-              } as React.CSSProperties
-            }
-            onClick={() => onSelect(d.dayKey)}
-            title={`${d.dayKey} — ${duration(d.totalSeconds)} tracked, focus ${d.focusScore}`}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/** The month as a real calendar, which is how people hold a month in their head. */
-function MonthCalendar({
-  range,
-  days,
-  selected,
-  onSelect,
-}: {
-  range: DayRange
-  days: DaySummary[]
-  selected: string
-  onSelect(key: string): void
-}) {
-  const { byKey, max } = useHeat(days)
-  const weeks = useMemo(() => monthGrid(range), [range])
-  const headings = useMemo(() => {
-    // Derived from the first week of the grid rather than hard-coded, so the
-    // column headings cannot disagree with the cells under them.
-    const first = weeks[0] || []
-    return first.map((key, index) => {
-      if (key) return weekdayShort(parseYmdLocal(key).getTime())
-      // Leading blanks: walk back from the first real day in the row.
-      const anchor = first.find((k): k is string => !!k)
-      if (!anchor) return ''
-      const d = parseYmdLocal(anchor)
-      d.setDate(d.getDate() - (first.indexOf(anchor) - index))
-      return weekdayShort(d.getTime())
-    })
-  }, [weeks])
-
-  return (
-    <div className="month-cal">
-      <div className="month-head">
-        {headings.map((label, i) => (
-          <span key={i}>{label}</span>
-        ))}
-      </div>
-      {weeks.map((week, i) => (
-        <div className="month-week" key={i}>
-          {week.map((key, j) =>
-            key ? (
-              <button
-                key={key}
-                className={`month-day${key === selected ? ' on' : ''}`}
-                style={
-                  { '--heat': ((byKey.get(key)?.totalSeconds || 0) / max).toFixed(3) } as React.CSSProperties
-                }
-                onClick={() => onSelect(key)}
-                title={`${key} — ${duration(byKey.get(key)?.totalSeconds || 0)} tracked`}
-              >
-                <span className="month-daynum">{parseYmdLocal(key).getDate()}</span>
-                <span className="month-daytime">
-                  {byKey.get(key)?.totalSeconds ? duration(byKey.get(key)!.totalSeconds) : ''}
-                </span>
-              </button>
-            ) : (
-              <span className="month-day blank" key={`b${j}`} />
-            )
-          )}
-        </div>
-      ))}
-    </div>
   )
 }

@@ -4,6 +4,7 @@ import {
   blockedBy,
   blockLabel,
   DEFAULT_BLOCK_TARGETS,
+  describeBlockList,
   nextShield,
   normalizeBlockTarget,
   normalizeBlockTargets,
@@ -93,8 +94,18 @@ describe('blockedBy', () => {
 
 describe('blockLabel', () => {
   it('names sites by their brand and apps by their app name', () => {
-    expect(blockLabel('youtube.com', chrome('youtube.com'))).toBe('Youtube')
+    expect(blockLabel('youtube.com', chrome('youtube.com'))).toBe('YouTube')
+    expect(blockLabel('reddit.com', null)).toBe('Reddit')
     expect(blockLabel('steam', app('Steam'))).toBe('Steam')
+  })
+})
+
+describe('describeBlockList', () => {
+  it('fits any list on one line', () => {
+    expect(describeBlockList([])).toBe('')
+    expect(describeBlockList(['youtube.com'])).toBe('YouTube')
+    expect(describeBlockList(['youtube.com', 'steam'])).toBe('YouTube and Steam')
+    expect(describeBlockList(DEFAULT_BLOCK_TARGETS)).toBe('YouTube, Reddit and 7 more')
   })
 })
 
