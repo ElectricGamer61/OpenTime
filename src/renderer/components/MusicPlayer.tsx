@@ -1,26 +1,22 @@
 /**
- * The ambient music player.
+ * The music player on the rail.
  *
- * Not a timer, not a second competing "start something" button next to
- * Focus — a small, always-available background player: pick a track, play or
- * pause it, set a volume. `useMusicPlayer` owns the one shared engine and
- * state; this is purely the trigger-and-popover UI, and it is mounted twice
- * on purpose — once as the rail's small unobtrusive control, once inside the
- * Focus setup sheet and dock — both reading and driving the same instance, so
- * starting a track from inside Focus and later adjusting it from the rail is
- * the same player, not two.
+ * Its own thing, apart from Focus: one short list of music and ambient
+ * sounds. Click one to play it, click it again to pause, and set the volume.
+ * It never touches tracked time. `useMusicPlayer` owns the audio; this is
+ * only the trigger and the popover.
  *
  * Portalled to `document.body` for the same reason every rail-anchored
  * overlay is: the rail is `overflow: hidden` for its collapse animation, so
  * anything wider than the rail rendered in place would be sliced off at its
- * edge. See the note in `App.tsx`'s `Workspace`.
+ * edge.
  */
 
 import type { ComponentType } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { MUSIC_TRACKS, type MusicTrackId } from '../../core/music'
+import { AMBIENT_SOUNDS, MUSIC_TRACKS, soundLabel, type PlayerSound } from '../../core/music'
 import type { MusicPlayerState } from '../lib/useMusicPlayer'
 import {
   IconMusic,
@@ -32,27 +28,26 @@ import {
   IconWave,
 } from './Icons'
 
-const TRACK_ICONS: Record<MusicTrackId, ComponentType<{ size?: number }>> = {
+const ICONS: Record<PlayerSound, ComponentType<{ size?: number }>> = {
   lofi: IconMusic,
   whale: IconWave,
   alpha: IconPulse,
   classical: IconPiano,
+  rain: IconSound,
+  ocean: IconWave,
+  cafe: IconSound,
+  deep: IconSound,
 }
 
-const MENU_WIDTH = 300
+const GROUPS: Array<{ title: string; items: Array<{ id: PlayerSound; label: string; detail: string }> }> = [
+  { title: 'Music', items: MUSIC_TRACKS },
+  { title: 'Sounds', items: AMBIENT_SOUNDS },
+]
+
+const MENU_WIDTH = 260
 const MENU_MARGIN = 8
 
-export function MusicPlayerControl({
-  player,
-  label,
-  compact,
-}: {
-  player: MusicPlayerState
-  /** "Music" on the rail, "Play music" inside Focus — same popover either way. */
-  label: string
-  /** Rail-collapsed: icon only, no label, no trailing playing dot text. */
-  compact?: boolean
-}) {
+export function MusicPlayerControl({ player }: { player: MusicPlayerState }) {
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
   const menu = useRef<HTMLDivElement>(null)
@@ -67,7 +62,7 @@ export function MusicPlayerControl({
       const button = wrap.current?.getBoundingClientRect()
       if (!button) return
       const width = menu.current?.offsetWidth ?? MENU_WIDTH
-      const height = menu.current?.offsetHeight ?? 220
+      const height = menu.current?.offsetHeight ?? 360
       const edge = MENU_MARGIN
       setPos({
         top: Math.max(edge, Math.min(button.top, window.innerHeight - height - edge)),
@@ -96,7 +91,10 @@ export function MusicPlayerControl({
     }
   }, [open])
 
-  const ActiveIcon = TRACK_ICONS[player.track]
+  const choose = (id: PlayerSound) => {
+    if (player.track === id) player.toggle()
+    else player.setTrack(id)
+  }
 
   return (
     <div className="music-player-wrap" ref={wrap}>
@@ -104,55 +102,49 @@ export function MusicPlayerControl({
         className={`music-player-trigger${player.playing ? ' on' : ''}`}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        title="Music"
+        title={player.playing ? `Playing ${soundLabel(player.track)}` : 'Music'}
       >
         <IconMusic size={16} />
-        {compact ? null : <span className="nav-label">{label}</span>}
+        <span className="nav-label">{player.playing ? soundLabel(player.track) : 'Music'}</span>
         {player.playing ? <i className="music-player-dot" aria-hidden="true" /> : null}
       </button>
 
       {open
         ? createPortal(
             <div
-              className="music-player-menu"
+              className="music-menu"
               ref={menu}
               role="dialog"
-              aria-label="Music player"
+              aria-label="Music"
               style={{ width: MENU_WIDTH, top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
             >
-              <div className="music-player-tracks">
-                {MUSIC_TRACKS.map((t) => {
-                  const Icon = TRACK_ICONS[t.id]
-                  return (
-                    <button
-                      key={t.id}
-                      className={`music-player-track${player.track === t.id ? ' on' : ''}`}
-                      onClick={() => player.setTrack(t.id)}
-                      title={t.detail}
-                      aria-pressed={player.track === t.id}
-                    >
-                      <Icon size={18} />
-                      <span>{t.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
+              {GROUPS.map((group) => (
+                <div className="music-group" key={group.title}>
+                  <div className="music-group-title">{group.title}</div>
+                  {group.items.map((item) => {
+                    const Icon = ICONS[item.id]
+                    const current = player.track === item.id
+                    const live = current && player.playing
+                    return (
+                      <button
+                        key={item.id}
+                        className={`music-row${live ? ' on' : ''}`}
+                        onClick={() => choose(item.id)}
+                        title={item.detail}
+                        aria-pressed={live}
+                      >
+                        <Icon size={16} />
+                        <span>{item.label}</span>
+                        <span className="music-row-action" aria-hidden="true">
+                          {live ? <IconPause size={14} /> : <IconPlay size={14} />}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ))}
 
-              <div className="music-player-controls">
-                <button
-                  className={`icon-btn${player.playing ? ' on' : ''}`}
-                  onClick={player.toggle}
-                  title={player.playing ? 'Pause' : 'Play'}
-                >
-                  {player.playing ? <IconPause size={17} /> : <IconPlay size={17} />}
-                </button>
-                <span className="music-player-now" title={MUSIC_TRACKS.find((t) => t.id === player.track)?.label}>
-                  <ActiveIcon size={14} />
-                  {MUSIC_TRACKS.find((t) => t.id === player.track)?.label}
-                </span>
-              </div>
-
-              <label className="music-player-volume">
+              <label className="music-volume">
                 <IconSound size={15} />
                 <input
                   type="range"
@@ -160,6 +152,7 @@ export function MusicPlayerControl({
                   max={1}
                   step={0.01}
                   value={player.volume}
+                  style={{ '--fill': `${Math.round(player.volume * 100)}%` } as React.CSSProperties}
                   onChange={(e) => player.setVolume(Number(e.target.value))}
                   aria-label="Volume"
                 />

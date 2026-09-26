@@ -110,8 +110,26 @@ export function blockedBy(sample: WindowSample | null, targets: string[]): strin
 /** The pretty name shown on the shield: "YouTube", not "youtube.com". */
 export function blockLabel(target: string, sample: WindowSample | null): string {
   if (!isHost(target) && sample?.app) return sample.app
+  if (BRAND_NAMES[target]) return BRAND_NAMES[target]
   const name = target.split('.')[0]
   return name ? name[0].toUpperCase() + name.slice(1) : target
+}
+
+/** How the usual suspects spell themselves, so the shield never says "Youtube". */
+const BRAND_NAMES: Record<string, string> = {
+  'youtube.com': 'YouTube',
+  'x.com': 'X',
+  'tiktok.com': 'TikTok',
+  'twitch.tv': 'Twitch',
+  'linkedin.com': 'LinkedIn',
+}
+
+/** "YouTube, Reddit and 7 more": a whole block list in one short line. */
+export function describeBlockList(targets: string[]): string {
+  if (!targets.length) return ''
+  const names = targets.slice(0, 2).map((t) => blockLabel(t, null))
+  const rest = targets.length - names.length
+  return rest > 0 ? `${names.join(', ')} and ${rest} more` : names.join(' and ')
 }
 
 export interface ShieldState {

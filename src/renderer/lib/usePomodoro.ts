@@ -15,14 +15,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { PomodoroPhase } from '../../core/pomodoro'
 import { otherPhase, pomodoroCountdown } from '../../core/pomodoro'
-import type { AmbientBedId } from '../../core/types'
 import { useNow } from '../state/useOpenTime'
 import type { OpenTimeState } from '../state/useOpenTime'
 
 export interface PomodoroInput {
   label: string
   projectId?: string
-  sound: AmbientBedId
   workMinutes: number
   breakMinutes: number
 }
@@ -30,7 +28,6 @@ export interface PomodoroInput {
 interface PomodoroRun {
   label: string
   projectId?: string
-  sound: AmbientBedId
   workMinutes: number
   breakMinutes: number
   phase: PomodoroPhase
@@ -74,12 +71,11 @@ export function usePomodoro(app: OpenTimeState) {
   }, [app])
 
   const openWork = useCallback(
-    async (r: Pick<PomodoroRun, 'label' | 'projectId' | 'sound'>, minutes: number): Promise<boolean> => {
+    async (r: Pick<PomodoroRun, 'label' | 'projectId'>, minutes: number): Promise<boolean> => {
       const result = await app.startFocus({
         label: r.label,
         minutes: Math.max(1, minutes),
         projectId: r.projectId,
-        sound: r.sound,
       })
       if (!result.ok) {
         setError(result.message || 'That work block could not be started.')
@@ -100,7 +96,6 @@ export function usePomodoro(app: OpenTimeState) {
       setRun({
         label: input.label,
         projectId: input.projectId,
-        sound: input.sound,
         workMinutes: input.workMinutes,
         breakMinutes: input.breakMinutes,
         phase: 'work',
@@ -226,7 +221,6 @@ export function usePomodoro(app: OpenTimeState) {
     run: run
       ? {
           label: run.label,
-          sound: run.sound,
           phase: run.phase,
           cyclesCompleted: run.cyclesCompleted,
           paused: run.paused,

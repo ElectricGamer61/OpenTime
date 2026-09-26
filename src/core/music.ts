@@ -15,6 +15,8 @@
  * Pure and dependency-free; `tests/music.test.ts` pins it.
  */
 
+import type { AmbientBedId } from './types'
+
 /** See `docs/audio-licenses.md` for what each of these actually is and where it came from. */
 export type MusicTrackId = 'lofi' | 'whale' | 'alpha' | 'classical'
 
@@ -39,6 +41,34 @@ export function isMusicTrack(value: unknown): value is MusicTrackId {
 
 /** The track a fresh player opens on. */
 export const DEFAULT_MUSIC_TRACK: MusicTrackId = 'lofi'
+
+/**
+ * Ambient sounds, played by the same player as the tracks. They used to be a
+ * separate "Sound" choice inside Focus, next to a separate "Music" button,
+ * which put two audio controls in the one place that should be about starting
+ * to work. They share `AmbientBedId` with the focus model so an old session
+ * record still reads, but only the player offers them now.
+ */
+export type AmbientSoundId = Exclude<AmbientBedId, 'silence'>
+
+export const AMBIENT_SOUNDS: Array<{ id: AmbientSoundId; label: string; detail: string }> = [
+  { id: 'rain', label: 'Rain', detail: 'Steady rain on a window.' },
+  { id: 'ocean', label: 'Waves', detail: 'A slow swell that rises and falls.' },
+  { id: 'cafe', label: 'Room tone', detail: 'The low hum of a busy room.' },
+  { id: 'deep', label: 'Deep hum', detail: 'A dark drone with nothing to follow.' },
+]
+
+/** Anything the player can play. */
+export type PlayerSound = MusicTrackId | AmbientSoundId
+
+/** The label of any sound the player knows. */
+export function soundLabel(id: PlayerSound): string {
+  return (
+    MUSIC_TRACKS.find((t) => t.id === id)?.label ??
+    AMBIENT_SOUNDS.find((s) => s.id === id)?.label ??
+    id
+  )
+}
 
 /** Clamp a volume slider's raw input into the 0–1 the audio engine expects. */
 export function clampVolume(value: number): number {
