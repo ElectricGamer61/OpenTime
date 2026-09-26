@@ -280,8 +280,9 @@ day it matters they miss it too.
 - **Private subjects** (new) — a client name, matter number or health portal is
   never recorded *in any application*, matched against window title and host.
   Apps are the wrong unit for confidentiality; subjects are the right one.
-- No telemetry, no analytics, no network calls except to Google's own endpoints
-  after the user connects an account.
+- No telemetry, no analytics. The only network calls are to Google's own
+  endpoints after the user connects an account, and a GitHub update check if
+  they said yes to one (§22), which sends nothing about them.
 - OpenTime never tracks itself.
 
 ## 13. Durable local storage
@@ -344,10 +345,23 @@ default said so.
 | Status | **Shipped** |
 | Where | `src/renderer/components/Onboarding.tsx` |
 
-Three facts on first run — what is recorded, whether capture actually works on
-this machine, and where the data lives — with a live capture check and a link to
-the data folder. Deliberately not a feature tour: there is nothing to tour, which
-is the point of the product.
+Four short screens, about thirty seconds, on a fresh install only:
+
+1. What OpenTime is (automatic, private, free) and whether tracking works on
+   this machine, with **Check again** when it does not.
+2. Where everything is: one line each for Dashboard, Calendar, Start focus,
+   Reports and Goals, plus the tray and its two shortcuts.
+3. The choices worth making up front: light, dark or match system (previewed
+   live), start at sign-in, break reminders, distraction blocking, update checks.
+4. Done: it is already tracking, and where feedback goes.
+
+The choices and the "done" marker are saved in **one write**
+(`completeOnboarding`), so it cannot half-finish, and the marker lives in the
+data folder rather than the program, so it shows **once ever**: not again after
+an update, and not again after a reinstall that keeps the data. Skipping is
+completing with the suggested choices, every one of which was visible, with a
+switch, before anything was saved. The store starts empty: nothing is seeded
+into a working install (§17).
 
 ## 17. Honest demo data
 
@@ -370,11 +384,27 @@ deletes exactly the seeded days plus any demo-adapter rows sitting in real days.
 | | |
 |---|---|
 | Status | **Shipped** |
-| Where | `src/core/focus.ts`, `src/renderer/components/Focus.tsx`, `src/renderer/lib/ambient.ts` |
+| Where | `src/core/focus.ts`, `src/core/pomodoro.ts`, `src/renderer/components/Focus.tsx`, `src/renderer/lib/usePomodoro.ts`, `src/renderer/lib/ambient.ts` |
 
 Everything else in OpenTime observes. This is the one place the user *declares*:
 name the work, choose a length, optionally choose an ambient bed, and get a dock
-with a countdown, an extend button and a stop button.
+with a countdown, an extend button and a stop button. One primary "Start focus"
+entry point on the rail, not several competing timer buttons — the setup sheet
+has a Timer/Pomodoro toggle for which shape the session takes, not two separate
+actions.
+
+**Pomodoro mode is not a second tracker.** A work phase *is* an ordinary focus
+session, started and sealed through the exact same `startFocus`/`endFocus`
+primitives a plain timed session uses; a break phase has no session at all.
+Pausing seals whatever work has run so far and resuming opens a fresh session
+for the remainder — reusing "pause = seal, resume = reopen" instead of
+inventing a pause concept inside `ActiveFocus` is what guarantees no minute is
+ever double-counted or silently dropped, and it means `src/core/focus.ts` did
+not need to change at all to support Pomodoro. `src/core/pomodoro.ts` is pure
+phase/preset arithmetic (25/5, 50/10, or a validated custom split);
+`usePomodoro` in the renderer is the state machine that drives it through
+`OpenTimeState`. Skip and Stop each seal the current work phase first if one is
+running, the same way ending a plain session does.
 
 The design decision that matters is that **a focus session is not a second kind
 of record.** Capture keeps sampling throughout, unchanged. Ending the session
@@ -406,37 +436,39 @@ renderer's CSP allows no external sources), no licensing question, and no
 network. Filtered noise is also the honest version of what these are for:
 something with no detail for attention to land on.
 
-**Not modelled:** distraction blocking. Blocking sites or apps means either a
-system-level network hook or an accessibility-driven window killer, both of which
-are a much larger promise about what this app is allowed to do to your machine
-than "it reads which window has focus". Post-session self-rating is also absent —
-it exists in this product class to train a focus-detection model, and OpenTime
-sends nothing anywhere to train anything.
+Distraction blocking is its own section (§21). **Not modelled:** post-session
+self-rating. It exists in this product class to train a focus-detection model,
+and OpenTime sends nothing anywhere to train anything.
 
-## 19. Music timer
+## 19. Ambient music player
 
 | | |
 |---|---|
 | Status | **Shipped** |
-| Where | `src/core/music.ts`, `src/renderer/components/MusicTimer.tsx`, `src/renderer/lib/music.ts` |
+| Where | `src/core/music.ts`, `src/renderer/lib/useMusicPlayer.ts`, `src/renderer/components/MusicPlayer.tsx`, `src/renderer/lib/music.ts` |
 
-Background listening with a countdown: pick a track, pick a length (or
-"Until stopped"), and a dock floats over the app the same way the focus dock
-does. Four tracks — lo-fi, whale song, alpha waves, classical — chosen to
-answer a specific ask for "concentration audio" without reversing the reason
-Focus's ambient beds are synthesised (see §18): see
-[`docs/audio-licenses.md`](../docs/audio-licenses.md) for exactly what each
-track is and, for the one real recording, where it came from and under what
-license.
+A small, always-available background player — not a timer, and not a second
+"start something" button competing with Focus. Pick a track, play or pause it,
+set a volume; there is no length, no countdown, no dock. `useMusicPlayer` owns
+one shared engine instance for the whole app; `MusicPlayerControl` is just the
+trigger-and-popover UI around it, mounted twice on purpose (a small
+unobtrusive control on the rail, and again inside the Focus setup sheet and
+running docks) so starting a track from one place and adjusting it from the
+other is the same player, not two. Four tracks — lo-fi, whale song, alpha
+waves, classical — chosen to answer a specific ask for "concentration audio"
+without reversing the reason Focus's ambient beds are synthesised (see §18):
+see [`docs/audio-licenses.md`](../docs/audio-licenses.md) for exactly what
+each track is and, for the one real recording, where it came from and under
+what license.
 
 **Deliberately not a variant of a focus session.** A focus session is a claim
 over tracked time and has to survive the window reloading, so it lives in the
-main process. A music timer has no consequence for the timeline at all — it
-never seals anything, never touches a day's sessions, carries no category —
-so it lives entirely in the renderer. Closing the window or reloading just
-stops the sound; there is nothing to lose because nothing was ever recorded.
-The two can run at once — the docks are positioned to stack rather than
-overlap when they do.
+main process. The music player has no consequence for the timeline at all —
+it never seals anything, never touches a day's sessions, carries no category —
+so it lives entirely in the renderer, driven by a plain hook rather than IPC.
+Closing the window or reloading just stops the sound; there is nothing to
+lose because nothing was ever recorded. It can run alongside a Focus session
+(plain or Pomodoro) with no interaction between the two.
 
 Three of the four tracks are pre-rendered once through an `OfflineAudioContext`
 into a short `AudioBuffer` that then loops exactly like the Focus ambient
@@ -466,6 +498,61 @@ app already holding the combination, or a desktop session with no global-hotkey
 support, degrades to "no shortcut" rather than failing to boot, the same
 treatment the tray itself gets.
 
+## 21. Distraction blocking
+
+| | |
+|---|---|
+| Status | **Shipped** (opt-in, off by default) |
+| Where | `src/core/blocking.ts`, `src/main/blocker.ts`, `src/shield/` |
+
+During a focus session only, anything on the user's list that comes to the
+front is covered by a shield: a calm full-screen card naming the distraction,
+the session and the time left, with **Allow 5 minutes** and **End focus
+session**. Sites match by host and cover subdomains (`youtube.com` covers
+`m.youtube.com`, and `x.com` does not cover `dropbox.com`); apps match by name.
+A browser that hides its URL falls back to the site's name as a whole word in
+the title, only for names long enough not to collide with ordinary words.
+
+This used to be on the "not built on purpose" list, because the usual ways to
+block (a system network hook, or killing windows) are a far larger promise
+about what the app may do to your machine than reading which window has focus.
+The shield keeps that promise small:
+
+- **It never closes, kills or edits anything**, so it cannot lose work, and it
+  needs no admin rights and no system settings.
+- **It never takes keyboard focus.** The blocked window stays in front beneath
+  it, so Ctrl+W or switching apps still works, and the shield lifts on the next
+  one-second tick once something unblocked is in front. The taskbar stays
+  uncovered, so there is always a way out.
+- **It covers the display the distraction is on**, not the one the pointer is
+  on, and follows it if it is dragged to another monitor.
+- **It never covers OpenTime itself**, so opening the app to end the session
+  always works. A minimised OpenTime does not count as "in front", even when
+  Windows still reports it focused.
+- **Nothing runs unless it is used.** Outside a focus session, or with blocking
+  off, there is no timer at all.
+
+## 22. Updates and feedback
+
+| | |
+|---|---|
+| Status | **Shipped** |
+| Where | `src/main/updater.ts`, `src/shared/project.ts`, `.github/workflows/windows-package.yml`, `.github/ISSUE_TEMPLATE/` |
+
+Updates come from GitHub Releases through `electron-updater`. Checking is the
+only network call OpenTime makes on its own, so it happens only with the user's
+yes (asked in onboarding, off for anyone who never answered); **Check now** is
+always there, because a click is consent. Nothing downloads until **Update
+now**; the download is verified against the release's sha512; every pending
+write is flushed before the installer runs silently and relaunches the app. The
+data folder is never part of an install, update or uninstall. Releases are cut
+by pushing a `v*` tag, which the workflow checks against `package.json`.
+
+Feedback goes to GitHub issue forms (bug, idea, question), one click from the
+title bar or Settings. The bug form arrives with the version and OS filled in;
+nothing about the person or their tracked time is included, and nothing is sent
+until they submit it in their browser.
+
 ---
 
 ## Deferred, with reasons
@@ -473,11 +560,9 @@ treatment the tray itself gets.
 | Item | Why it is not built |
 |---|---|
 | **SQLite backend** | The sharded store fixed the durability and memory problems SQLite was wanted for. It would now buy indexed cross-day queries — worth doing when a reporting view needs them, not before. |
-| **Auto-update** | Natural choice is `electron-updater` against public GitHub Releases. Shipping an update feed only the author can publish to is worse than shipping none. A working, opt-in `Updater` class exists on the unmerged `fm/opentime-full-rize-parity` branch (main-process only, not renderer-tied) — see AGENTS.md's Branch archaeology note before rebuilding this from scratch. |
-| **Codesigning and notarisation** | Required before macOS distribution; needs an Apple Developer ID. |
+| **Codesigning and notarisation** | Unsigned Windows installers show a SmartScreen prompt on first run; macOS distribution and macOS self-updates need an Apple Developer ID. |
 | **Calendar write-back** | Scope is already selectable. Needs a clear model for what OpenTime is allowed to put on someone's calendar. A prototype exists on `fm/opentime-full-rize-parity` (see AGENTS.md), but its UI half predates the calendar rebuild and is not directly portable. |
 | **Accessibility audit** | Keyboard order is reasonable but unaudited. |
-| **Update check** | Still none, and deliberately so — see Auto-update above. A checker that only points at GitHub Releases would also be the app's first unsolicited network call, which §12 rules out. |
 | **Long-run soak test** | The engine is designed for a fixed memory ceiling and the store now has a bounded footprint, but neither has been run for days on real hardware. A `scripts/soak.mjs` + `tests/soak.test.ts` harness exists on `fm/opentime-full-rize-parity` (see AGENTS.md) against an older `Tracker` shape; would need rechecking against the current one, not a straight port. |
 
 ## Not built on purpose
@@ -490,7 +575,6 @@ treatment the tray itself gets.
 | **Accounts, cloud sync, subscription** | The data is on your machine and stays there. Sync is a legitimate feature request, but it should arrive as "point it at your own folder", not as an account. |
 | **Streaks and badges** | See §10. Gamification survives about two weeks and then costs credibility permanently. |
 | **AI-generated day summaries** | Would mean sending activity metadata to a model provider, which contradicts §12 outright. |
-| **Distraction blocking during a focus session** | See §18. Blocking sites or apps needs either a system-level network hook or an accessibility-driven window killer — a far larger promise about what this app may do to your machine than "it reads which window has focus". |
 | **Post-session focus self-rating** | Exists in this product class to train a focus-detection model. OpenTime sends nothing anywhere, so the rating would train nothing and would only be a question asked at the end of every session. |
 
 ## Candidates for removal or rework

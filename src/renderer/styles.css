@@ -252,6 +252,10 @@ select option {
 .app {
   display: grid;
   grid-template-rows: var(--titlebar) minmax(0, 1fr);
+  /* Rows-only grids need the column clamp (see AGENTS.md): without it the
+     implicit column grows to its widest child, and the title bar's width
+     comes from the OS rather than the viewport. */
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   background: var(--bg);
 }
@@ -275,6 +279,9 @@ select option {
      underneath those controls instead of stopping short of them. A no-op
      everywhere the variable is unset (macOS, Linux). */
   width: env(titlebar-area-width, 100%);
+  /* The env value describes the real window, not the viewport; never let it
+     push the bar wider than the page it sits in. */
+  max-width: 100%;
 }
 
 /* macOS insets its traffic lights into the left of the bar; this is the room
@@ -282,17 +289,6 @@ select option {
    simply balances the right-hand controls. */
 .titlebar-left {
   min-width: 76px;
-}
-
-.titlebar-mark {
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: 0.36em;
-  /* The tracking pushes the mark visually right of centre; the indent takes
-     the trailing letter-space back off. */
-  text-indent: 0.36em;
-  color: var(--text-dim);
-  white-space: nowrap;
 }
 
 .titlebar-right {
@@ -318,9 +314,34 @@ select option {
   transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
 }
 
-.titlebar-link:hover {
+.titlebar-link:hover,
+.titlebar-link.open {
   color: var(--text);
   background: var(--surface-2);
+}
+
+.update-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--accent);
+  box-shadow: 0 2px 10px var(--accent-soft);
+  transition: background var(--fast) var(--ease);
+}
+
+button.update-chip:hover {
+  background: var(--accent-hi);
+}
+
+.update-chip.busy {
+  color: var(--accent-hi);
+  background: var(--accent-soft);
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .track-chip {
@@ -385,116 +406,84 @@ select option {
   padding: 0 0 10px;
 }
 
-.workspace-wrap {
-  position: relative;
-  min-width: 0;
-  flex: 1;
-}
-
-.workspace {
+.rail-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 5px 6px;
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 550;
-  transition: background var(--fast) var(--ease);
-}
-
-.workspace:hover,
-.workspace.open {
-  background: var(--surface-2);
-}
-
-.workspace-avatar {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-}
-
-.workspace-avatar .brand-mark {
-  width: 15px;
-  height: 15px;
-  filter: none;
-}
-
-.workspace-name {
+  gap: 9px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 1;
+  padding: 5px 6px;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
   white-space: nowrap;
 }
 
-.workspace-caret {
-  width: 13px;
-  height: 13px;
-  flex: 0 0 13px;
-  color: var(--text-faint);
-  margin-left: auto;
+.rail-brand .brand-mark {
+  flex: 0 0 auto;
 }
 
-/* Portalled to the body (see App.tsx): the rail clips, and the card is wider
-   than the rail. Position comes from the trigger's rect, not from the flow. */
-.workspace-menu {
+/* A small card of choices, portalled to the body and placed from its
+   trigger's rect (see FeedbackMenu in App.tsx). */
+.menu-wrap {
+  position: relative;
+}
+
+.menu-card {
   position: fixed;
   z-index: 40;
-  padding: 12px;
+  padding: 6px;
   display: grid;
-  gap: 8px;
+  gap: 2px;
   border-radius: var(--radius);
   background: var(--surface-float);
   border: 1px solid var(--line-strong);
   box-shadow: inset 0 1px 0 var(--sheen), var(--shadow-float);
-  transform-origin: top left;
+  transform-origin: top right;
   animation: float-in var(--med) var(--ease-spring) both;
 }
 
-.workspace-menu-head {
-  font-size: 12px;
-  color: var(--text-dim);
-  line-height: 1.5;
-}
-
-.workspace-path {
-  font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.menu-head {
+  padding: 6px 8px 4px;
+  font-size: 11.5px;
   color: var(--text-faint);
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-xs);
-  padding: 7px 9px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.workspace-action {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
+.menu-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 8px;
   border-radius: var(--radius-xs);
-  font-size: 12.5px;
+  text-align: left;
   color: var(--text-dim);
   transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 
-.workspace-action:hover {
-  background: var(--surface-3);
+.menu-item svg {
+  margin-top: 1px;
+}
+
+.menu-item span {
+  display: grid;
+  gap: 1px;
+}
+
+.menu-item b {
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--text);
 }
 
-.workspace-menu-foot {
-  font-size: 11px;
+.menu-item small {
+  font-size: 11.5px;
   color: var(--text-faint);
+}
+
+.menu-item:hover {
+  background: var(--surface-3);
 }
 
 .rail-collapse {
@@ -599,8 +588,6 @@ select option {
 /* Collapsed, only the icons remain. The labels are clipped rather than removed
    so the rail animates to width instead of reflowing. */
 .app.rail-collapsed .nav-label,
-.app.rail-collapsed .workspace-name,
-.app.rail-collapsed .workspace-caret,
 .app.rail-collapsed .rail-meta {
   display: none;
 }
@@ -1421,6 +1408,87 @@ select option {
   padding-top: 48px;
 }
 
+/* Takes the tabs row's place when the grid is showing the week strip instead
+   of one day's grouping, which the tabs describe and the strip does not. */
+.grid-tabs-hint {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  margin-right: auto;
+}
+
+/* ── The week strip ─────────────────────────────────────────────────────── */
+
+.week-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--gap-2);
+  padding-top: 8px;
+}
+
+.week-day {
+  display: grid;
+  gap: 10px;
+  padding: 14px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+.week-day:hover {
+  background: var(--surface-2);
+}
+
+.week-day.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.week-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.week-day-name {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: var(--caps-ls);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.week-day.today .week-day-name {
+  color: var(--accent-hi);
+}
+
+.week-day-num {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.week-day-total {
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.week-day-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+
+.week-day-bar i {
+  display: block;
+  height: 100%;
+}
+
 /* ── The hour grid ──────────────────────────────────────────────────────── */
 
 .daygrid {
@@ -1668,7 +1736,7 @@ select option {
   border-radius: 999px;
 }
 
-.popover-workspace {
+.popover-kind {
   font-size: 12px;
   font-weight: 550;
   color: var(--text-dim);
@@ -2822,6 +2890,118 @@ select option {
   border-top: 1px solid var(--line-soft);
 }
 
+/* A second heading inside one settings card. */
+.card-title-gap {
+  margin-top: var(--gap-5);
+}
+
+.card-lede {
+  margin: -4px 0 var(--gap-2);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+/* A setting whose control is a list, laid out under its label rather than
+   beside it. */
+.setting-sub {
+  display: grid;
+  gap: 6px;
+  padding: 13px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.setting-sub .setting-desc {
+  margin: 0 0 6px;
+}
+
+.setting-sub[aria-disabled='true'] {
+  opacity: 0.55;
+}
+
+.setting-desc code {
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  background: var(--surface-3);
+}
+
+.chip-empty {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-1);
+  margin-top: var(--gap-2);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.chip.suggest {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.chip.suggest:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+/* Settings most people never need, one click away rather than in the way. */
+.advanced {
+  border-top: 1px solid var(--line-soft);
+}
+
+.advanced > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 13px 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  list-style: none;
+}
+
+.advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--fast) var(--ease);
+}
+
+.advanced[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.advanced > summary:hover {
+  color: var(--text);
+}
+
+.advanced > .setting-row:first-of-type {
+  padding-top: 0;
+}
+
+.feedback-row {
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+
 .setting-name {
   font-weight: 550;
 }
@@ -3095,61 +3275,367 @@ select option {
 }
 
 .onboard {
-  width: min(660px, 100%);
+  width: min(560px, 100%);
   max-height: 100%;
   overflow: auto;
   display: grid;
-  gap: var(--gap-3);
-  padding: var(--gap-5);
-  border-radius: var(--radius-lg);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  border-radius: 16px;
   background: var(--surface);
   border: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-float);
+}
+
+.onboard-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--gap-3);
+  /* Tall enough for the longest step, so the card never jumps between steps;
+     the shorter steps centre themselves in it. */
+  min-height: 510px;
+  padding: 32px 32px 8px;
+  animation: onboard-step var(--med) var(--ease) both;
+}
+
+.onboard[data-step='welcome'] .onboard-body,
+.onboard[data-step='done'] .onboard-body {
+  align-content: center;
+}
+
+.onboard-hero {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: var(--gap-2);
+  padding-top: var(--gap-2);
+}
+
+.onboard-hero .brand-mark {
+  margin-bottom: var(--gap-2);
+  filter: drop-shadow(0 10px 24px rgba(124, 92, 255, 0.35));
 }
 
 .onboard-title {
   margin: 0;
-  font-size: 21px;
-  font-weight: 620;
+  font-size: 22px;
+  font-weight: 650;
   letter-spacing: -0.02em;
 }
 
 .onboard-sub {
-  margin: calc(var(--gap-2) * -1) 0 0;
-  font-size: 13.5px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
   color: var(--text-dim);
 }
 
-.onboard-steps {
+/* The three promises on the welcome screen. */
+.onboard-points {
   display: grid;
-  gap: var(--gap-4);
-  margin: 0;
-  padding-left: 20px;
+  gap: var(--gap-3);
+  margin: var(--gap-2) 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.onboard-steps li {
+.onboard-points li,
+.onboard-tour li {
   display: grid;
-  gap: 7px;
-  justify-items: start;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--gap-3);
+  align-items: start;
 }
 
-.onboard-steps li::marker {
-  color: var(--text-faint);
-  font-size: 12px;
+.onboard-points li div,
+.onboard-tour li div,
+.onboard-option div {
+  display: grid;
+  gap: 2px;
 }
 
-.onboard-step-title {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-1);
-  font-size: 14px;
+.onboard-points b,
+.onboard-tour b,
+.onboard-option b {
+  font-size: 13.5px;
   font-weight: 600;
 }
 
-.onboard-step-body {
+.onboard-points span:not(.onboard-tick),
+.onboard-tour li span:not(.onboard-tour-icon),
+.onboard-option span {
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: 1.5;
   color: var(--text-dim);
+}
+
+.onboard-tick {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.onboard-status {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin-top: var(--gap-2);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  background: var(--surface-3);
+}
+
+.onboard-status span {
+  flex: 1;
+}
+
+.onboard-status .beat {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--productive);
+}
+
+.onboard-status.warn .beat {
+  background: var(--warn);
+}
+
+/* Where everything is. */
+.onboard-tour {
+  display: grid;
+  gap: var(--gap-3);
+  margin: var(--gap-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onboard-tour-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.onboard-tour-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.onboard-tip {
+  margin: var(--gap-1) 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
+.onboard-tip b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.onboard-tip kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+/* Make it yours. */
+.onboard-themes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap-2);
+  margin-top: var(--gap-1);
+}
+
+.onboard-theme {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding: 10px 10px 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease);
+}
+
+.onboard-theme:hover {
+  border-color: var(--line-strong);
+}
+
+.onboard-theme.on {
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* A miniature window: a rail, a title bar, a card. */
+.onboard-swatch {
+  position: relative;
+  width: 100%;
+  height: 58px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(128, 128, 140, 0.25);
+}
+
+.onboard-swatch i {
+  position: absolute;
+  border-radius: 3px;
+}
+
+.onboard-swatch i:nth-child(1) {
+  inset: 0 auto 0 0;
+  width: 24%;
+  border-radius: 0;
+}
+
+.onboard-swatch i:nth-child(2) {
+  top: 10px;
+  left: 32%;
+  width: 40%;
+  height: 7px;
+}
+
+.onboard-swatch i:nth-child(3) {
+  top: 24px;
+  left: 32%;
+  right: 10%;
+  bottom: 10px;
+  border-radius: 5px;
+}
+
+.onboard-swatch.light {
+  background: #eef0f5;
+}
+.onboard-swatch.light i:nth-child(1) {
+  background: #e3e6ee;
+}
+.onboard-swatch.light i:nth-child(2) {
+  background: #7c5cff;
+}
+.onboard-swatch.light i:nth-child(3) {
+  background: #ffffff;
+}
+
+.onboard-swatch.dark {
+  background: #0d0d0f;
+}
+.onboard-swatch.dark i:nth-child(1) {
+  background: #151517;
+}
+.onboard-swatch.dark i:nth-child(2) {
+  background: #9a80ff;
+}
+.onboard-swatch.dark i:nth-child(3) {
+  background: #1e1e23;
+}
+
+/* Half light, half dark: "whatever the system says". */
+.onboard-swatch.system {
+  background: linear-gradient(90deg, #eef0f5 50%, #0d0d0f 50%);
+}
+.onboard-swatch.system i:nth-child(1) {
+  background: #e3e6ee;
+}
+.onboard-swatch.system i:nth-child(2) {
+  background: linear-gradient(90deg, #7c5cff 45%, #9a80ff 45%);
+}
+.onboard-swatch.system i:nth-child(3) {
+  background: linear-gradient(90deg, #ffffff 30%, #1e1e23 30%);
+}
+
+.onboard-options {
+  display: grid;
+  margin-top: var(--gap-1);
+}
+
+.onboard-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--gap-3);
+  align-items: center;
+  padding: 11px 0;
+  cursor: pointer;
+}
+
+.onboard-option + .onboard-option {
+  border-top: 1px solid var(--line-soft);
+}
+
+.onboard-done-mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 0 var(--gap-2);
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #7c5cff 55%, #f472b6);
+  box-shadow: 0 12px 30px rgba(124, 92, 255, 0.35);
+}
+
+.onboard-hero .onboard-tip {
+  margin-top: var(--gap-3);
+  max-width: 380px;
+}
+
+.onboard-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  padding: 16px 32px 24px;
+}
+
+.onboard-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.onboard-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-4);
+  transition:
+    width var(--med) var(--ease),
+    background var(--med) var(--ease);
+}
+
+.onboard-dots i.done {
+  background: var(--accent-line);
+}
+
+.onboard-dots i.on {
+  width: 20px;
+  background: var(--accent);
+}
+
+.onboard-actions {
+  display: flex;
+  gap: var(--gap-2);
 }
 
 @keyframes onboard-in {
@@ -3158,6 +3644,13 @@ select option {
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes onboard-step {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 
@@ -3414,7 +3907,7 @@ select option {
 }
 
 .btn.focus-start,
-.btn.music-start,
+.music-player-trigger,
 .focus-chip {
   width: 100%;
   justify-content: center;
@@ -3423,8 +3916,150 @@ select option {
   font-size: 12.5px;
 }
 
-.btn.music-start {
+/* Same bordered-pill language as `.focus-bed`, so the setup sheet and the
+   running docks read it as one more real control rather than a bare link
+   floating in the field. */
+.music-player-trigger {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-weight: 550;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.music-player-trigger:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.music-player-trigger.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+
+/* The rail trigger sits among plain ghost nav rows, not among bordered pill
+   buttons, so here alone it drops the border/fill and reads as one more
+   quiet rail control instead of a stray card. */
+.rail-music .music-player-trigger {
+  border-radius: var(--radius-sm);
+  border-color: transparent;
+  background: transparent;
+}
+
+.rail-music .music-player-trigger:hover {
+  background: var(--surface-3);
+}
+
+.rail-music .music-player-trigger.on {
+  background: transparent;
+  color: var(--accent-hi);
+}
+
+.rail-music {
   margin-top: 6px;
+}
+
+.music-player-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.music-player-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-hi);
+}
+
+/* Portalled to `document.body`, so it is positioned in fixed viewport
+   coordinates from the trigger's own bounding rect rather than from CSS. */
+.music-player-menu {
+  position: fixed;
+  z-index: 70;
+  display: grid;
+  gap: var(--gap-2);
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-float);
+  box-shadow: var(--shadow-float);
+  animation: float-in var(--fast) var(--ease) both;
+}
+
+.music-player-tracks {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.music-player-track {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 8px 2px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 550;
+  text-align: center;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.music-player-track span {
+  max-width: 100%;
+  line-height: 1.2;
+}
+
+.music-player-track:hover {
+  background: var(--surface-3);
+  color: var(--text-dim);
+}
+
+.music-player-track.on {
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+
+.music-player-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.music-player-now {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-dim);
+}
+
+.music-player-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-faint);
+}
+
+.music-player-volume input {
+  flex: 1;
 }
 
 .app.rail-collapsed .rail-cta {
@@ -3434,7 +4069,7 @@ select option {
 /* Collapsed, the button is the icon and nothing else — the label is clipped
    away everywhere else in the rail for the same reason. */
 .app.rail-collapsed .btn.focus-start .nav-label,
-.app.rail-collapsed .btn.music-start .nav-label,
+.app.rail-collapsed .music-player-trigger .nav-label,
 .app.rail-collapsed .focus-chip .nav-label {
   display: none;
 }
@@ -3466,6 +4101,19 @@ select option {
   color: var(--text-dim);
   font-weight: 500;
   font-size: 11px;
+}
+
+/* A break phase reads as a rest, not a second flavour of urgency — a cooler,
+   quieter chip rather than the accent used for everything else running. */
+.focus-chip.pomodoro-chip.break {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+  color: var(--text-dim);
+}
+
+.focus-chip.pomodoro-chip.break .nav-label,
+.focus-chip.pomodoro-chip.break .nav-label > :last-child {
+  color: var(--text-dim);
 }
 
 /* The setup and completion sheets are centred modals, not the right-hand
@@ -3633,25 +4281,57 @@ select option {
   flex: 0 0 auto;
 }
 
-/* Stacked above where the focus dock sits, so the two can never overlap when
-   a focus session and a music timer are both running at once. */
-.music-dock {
-  bottom: 84px;
+/* A break phase is a rest, not a second flavour of urgency the ring should
+   shout about — the ring itself is already cooled by `FocusRing`'s `tone`,
+   this just carries the same read onto the dock's border and the badge. */
+.pomodoro-dock.break {
+  border-color: var(--line-strong);
 }
 
-/* Stands in for the ring on an open-ended timer, which has no fraction to
-   draw — same footprint as `.focus-ring` so the dock does not reflow when a
-   timed track switches to "Until stopped". */
-.music-dock-mark {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+.pomodoro-dock.paused {
+  opacity: 0.82;
+}
+
+.pomodoro-phase-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: var(--caps-ls);
+  text-transform: uppercase;
+  vertical-align: middle;
   background: var(--accent-soft);
   color: var(--accent-hi);
+}
+
+.pomodoro-phase-badge.break {
+  background: var(--surface-3);
+  color: var(--text-dim);
+}
+
+.pomodoro-custom {
+  display: flex;
+  gap: var(--gap-2);
+}
+
+.pomodoro-custom label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.pomodoro-custom input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pomodoro-custom span {
+  color: var(--text-faint);
 }
 
 .focus-dock-text {
@@ -3775,18 +4455,6 @@ select option {
 
 .app.focus-running .grid-scroll {
   padding-bottom: 84px;
-}
-
-/* The music dock floats higher than the focus dock (see `.music-dock`) so the
-   two can stack, which means it alone — or both together — needs more
-   clearance than focus-running alone. Declared after `.focus-running` so it
-   wins on equal specificity when both classes are present at once. */
-.app.music-running .page {
-  padding-bottom: 160px;
-}
-
-.app.music-running .grid-scroll {
-  padding-bottom: 148px;
 }
 
 @keyframes dock-in {

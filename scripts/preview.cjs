@@ -115,26 +115,23 @@ const SHOTS = [
   { name: 'dashboard-focus', steps: [click('.nav-item', 'Dashboard')] },
   { name: 'settings-privacy', steps: [click('.nav-item', 'Settings'), click('.settings-nav button', 'Privacy')] },
   { name: 'goals', steps: [click('.nav-item', 'Goals')] },
-  { name: 'music-setup', steps: [click('.music-start')] },
   {
-    name: 'music-running',
-    steps: [click('.music-start'), click('.focus-beds button', 'Whale'), click('.focus-sheet-foot .btn.primary')],
+    // The rail's small unobtrusive player, opened — not a timer, just a
+    // track picker, play/pause, and a volume slider.
+    name: 'music-player',
+    steps: [click('.music-player-trigger')],
   },
   {
-    name: 'music-track-menu',
-    steps: [
-      click('.music-start'),
-      click('.focus-sheet-foot .btn.primary'),
-      click('.focus-sound-wrap .icon-btn'),
-    ],
+    name: 'focus-pomodoro-setup',
+    steps: [click('.focus-start'), click('.focus-mode-seg button', 'Pomodoro')],
   },
   {
-    // Both docks running at once, to check they stack rather than overlap.
-    name: 'music-and-focus',
+    // Work is a real focus session; the dock shows the phase, the ring, and
+    // the same embedded music control the plain timer dock has.
+    name: 'focus-pomodoro-running',
     steps: [
       click('.focus-start'),
-      click('.focus-sheet-foot .btn.primary'),
-      click('.music-start'),
+      click('.focus-mode-seg button', 'Pomodoro'),
       click('.focus-sheet-foot .btn.primary'),
     ],
   },

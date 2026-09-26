@@ -7,8 +7,8 @@ import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 
 /**
- * build/icon.ico, icon.icns, icon.png, and tray/*.png are generated from
- * build/icon.svg by scripts/make-icons.mjs and committed rather than built on
+ * build/icon.ico, icon.icns and icon.png are generated from build/icon.svg,
+ * and tray/*.png from build/tray.svg, by scripts/make-icons.mjs and committed rather than built on
  * every install (see electron-builder.config.cjs and src/main/icon.ts).
  * That only stays true if a hand-edit of the SVG is never shipped without
  * also running `npm run icons` — this regenerates every raster in-memory and
@@ -26,8 +26,9 @@ async function render(svg: Buffer, size: number): Promise<Buffer> {
 }
 
 describe('app icon rasters', () => {
-  it('are freshly regenerated from build/icon.svg (run `npm run icons` after editing it)', async () => {
+  it('are freshly regenerated from build/icon.svg and build/tray.svg (run `npm run icons` after editing either)', async () => {
     const svg = await readFile(path.join(buildDir, 'icon.svg'))
+    const traySvg = await readFile(path.join(buildDir, 'tray.svg'))
     const master = await render(svg, 1024)
 
     const expectedIco = png2icons.createICO(master, png2icons.BICUBIC2, 0, false, true)
@@ -47,7 +48,7 @@ describe('app icon rasters', () => {
     expect(actualPng.equals(expectedPng)).toBe(true)
 
     for (const size of TRAY_SIZES) {
-      const expected = await render(svg, size)
+      const expected = await render(traySvg, size)
       const actual = await readFile(path.join(buildDir, 'tray', `${size}.png`))
       expect(actual.equals(expected), `tray/${size}.png is stale`).toBe(true)
     }

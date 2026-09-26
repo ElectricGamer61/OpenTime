@@ -15,9 +15,12 @@ const DATED_FMT = new Intl.DateTimeFormat(undefined, {
   year: 'numeric',
 })
 
+/** Shown in place of a number that does not exist yet, e.g. before anything is tracked. */
+export const EMPTY_VALUE = String.fromCharCode(0x2014)
+
 /** "3h 12m", "48m", "—" — the everyday duration format. */
 export function duration(seconds: number): string {
-  if (!seconds || seconds < 1) return '—'
+  if (!seconds || seconds < 1) return EMPTY_VALUE
   // Round to whole minutes *first*, then split. Splitting first and rounding
   // the remainder lets 19h 59m 40s render as "19h 60m" — which it did.
   const totalMinutes = Math.round(seconds / 60)

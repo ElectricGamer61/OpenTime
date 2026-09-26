@@ -1,9 +1,14 @@
 name: Windows Package
 
+# A `v*` tag publishes a real release (what people download and what the
+# in-app updater reads). A push to main, or a manual run, publishes a
+# pre-release test build instead, which the updater ignores.
 on:
   push:
     branches:
-      - fm/opentime-finish-packaging
+      - main
+    tags:
+      - 'v*'
   workflow_dispatch: {}
 
 permissions:
@@ -20,6 +25,18 @@ jobs:
           node-version: 20
 
       - run: npm ci
+
+      # A release tag must name the version being built, or the updater would
+      # announce one version and install another.
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "${{ github.ref_name }}" ]; then
+            echo "Tag ${{ github.ref_name }} does not match package.json version $version"
+            exit 1
+          fi
 
       - run: npm run typecheck
 
@@ -143,40 +160,44 @@ jobs:
 
       # electron-builder can only stamp build/icon.ico into the .exe's
       # resources (rcedit) on a real Windows host, and NSIS shortcut/installer
-      # icon wiring can only be inspected the same way — see
-      # electron-builder.cjs's canEditExecutable comment and
-      # src/main/icon.ts. Checks every place a user actually sees the icon:
-      # the installer, the installed exe, the uninstaller, and both
-      # shortcuts, by sampling each icon's average colour against the brand
-      # mark's violet fill (build/icon.svg) rather than diffing exact pixels,
-      # which would be brittle across icon-extraction paths.
+      # icon wiring can only be inspected the same way. Checks every place a
+      # user actually sees the icon - the installer, the installed exe, the
+      # uninstaller, and both shortcuts - by extracting each icon and
+      # comparing its average colour with build/icon.ico extracted the same
+      # way. Comparing against the committed icon (rather than a hard-coded
+      # colour) keeps this check honest across icon redesigns, and a default
+      # or missing Electron icon is nowhere near it.
       - name: Verify the branded icon everywhere a user sees it
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.Drawing
 
-          function Test-BrandedIcon($path, $label) {
-            if (-not (Test-Path $path)) { throw "$label not found at $path" }
+          function Get-IconAverage($path) {
             $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($path)
-            if ($null -eq $icon) { throw "$label has no associated icon" }
+            if ($null -eq $icon) { throw "$path has no associated icon" }
             $bmp = $icon.ToBitmap()
             $rSum = 0; $gSum = 0; $bSum = 0; $n = 0
-            for ($x = 0; $x -lt $bmp.Width; $x += 2) {
-              for ($y = 0; $y -lt $bmp.Height; $y += 2) {
+            for ($x = 0; $x -lt $bmp.Width; $x++) {
+              for ($y = 0; $y -lt $bmp.Height; $y++) {
                 $p = $bmp.GetPixel($x, $y)
-                if ($p.A -gt 32) {
-                  $rSum += $p.R; $gSum += $p.G; $bSum += $p.B; $n++
-                }
+                if ($p.A -gt 32) { $rSum += $p.R; $gSum += $p.G; $bSum += $p.B; $n++ }
               }
             }
-            if ($n -eq 0) { throw "$label icon is fully transparent" }
-            $r = $rSum / $n; $g = $gSum / $n; $b = $bSum / $n
-            Write-Host "$label average colour over $n opaque samples: R=$r G=$g B=$b"
-            # build/icon.svg's fill is a violet gradient (#8a63ff -> #5b2fe0):
-            # blue and red both clearly outweigh green. A default/missing
-            # Electron icon (or a blank one) does not.
-            if (-not ($b -gt $g + 15 -and $r -gt $g + 5)) {
-              throw "$label icon does not look like the OpenTime brand mark (expected violet, got R=$r G=$g B=$b)"
+            if ($n -eq 0) { throw "$path icon is fully transparent" }
+            return @($($rSum / $n), $($gSum / $n), $($bSum / $n))
+          }
+
+          $reference = Get-IconAverage (Resolve-Path build\icon.ico)
+          Write-Host "Reference (build/icon.ico) average colour: $reference"
+
+          function Test-BrandedIcon($path, $label) {
+            if (-not (Test-Path $path)) { throw "$label not found at $path" }
+            $avg = Get-IconAverage $path
+            Write-Host "$label average colour: $avg"
+            for ($i = 0; $i -lt 3; $i++) {
+              if ([Math]::Abs($avg[$i] - $reference[$i]) -gt 12) {
+                throw "$label icon does not match build/icon.ico (got $avg, expected about $reference)"
+              }
             }
           }
 
@@ -215,12 +236,42 @@ jobs:
 
           Write-Host "Branded icon confirmed on the installer, installed exe, uninstaller, and both shortcuts."
 
-      # electron-builder's NSIS step needs a real Windows host (it needs Wine
-      # everywhere else); this runner is that host. Releases are used instead
-      # of actions/upload-artifact because the repo's Actions artifact quota
-      # is exhausted — a GitHub Release has its own storage and is also the
-      # simplest thing to link to from a PR.
-      - name: Publish installer as a GitHub Release
+      # The release people download and the in-app updater reads. latest.yml
+      # and the blockmap must ride along with the installer: the updater finds
+      # the version and the sha512 it verifies the download against in
+      # latest.yml, and fetches only changed blocks using the blockmap.
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version=$(node -p "require('./package.json').version")
+          cat > release-notes.md <<EOF
+          ## Install
+
+          1. Download **OpenTime-Setup-$version.exe** below.
+          2. Double-click it. It installs in a few seconds and opens.
+             If Windows says "Windows protected your PC", click **More info**, then **Run anyway**
+             (OpenTime is not code-signed yet).
+
+          Already have OpenTime? It updates in place and keeps all your data. With update
+          checks on, an **Update to $version** button appears in the app; otherwise use
+          **Settings, Updates & feedback, Check now**, or just run this installer.
+          EOF
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "OpenTime $version" \
+            --notes-file release-notes.md \
+            release/OpenTime-Setup-*.exe release/OpenTime-Setup-*.exe.blockmap release/latest.yml
+
+      # Every other run: a pre-release test build. Releases are used instead of
+      # actions/upload-artifact because the repo's Actions artifact quota is
+      # exhausted; the updater ignores pre-releases, so these never reach
+      # anyone's installed copy.
+      - name: Publish a test build as a pre-release
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -230,6 +281,6 @@ jobs:
           gh release create "$tag" \
             --repo "${{ github.repository }}" \
             --title "Windows build $tag ($(git rev-parse --short HEAD))" \
-            --notes "Automated Windows packaging build from \`${{ github.ref_name }}\` @ ${{ github.sha }}. Contains the NSIS installer and a zipped unpacked build." \
+            --notes "Automated Windows packaging build from \`${{ github.ref_name }}\` @ ${{ github.sha }}. Contains the NSIS installer and a zipped unpacked build. Test build, not a release." \
             --prerelease \
-            release/*.exe release/OpenTime-win-unpacked.zip
+            release/OpenTime-Setup-*.exe release/OpenTime-win-unpacked.zip

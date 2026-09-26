@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import type { DaySummary } from '../../core/aggregate'
 import { summarizeDay } from '../../core/aggregate'
 import { dayKey, dayStartTs, parseYmdLocal, formatYmdLocal } from '../../core/day'
+import { rangeFor, rangeLabel, type RangeKind } from '../../core/range'
 import type { IdleBlock, Session } from '../../core/types'
-import type { RangeKind } from '../../core/range'
 import type { Slice } from '../components/Charts'
 import { DayGrid } from '../components/DayGrid'
 import { EntryPopover } from '../components/EntryPopover'
@@ -22,7 +23,7 @@ import { Inspector } from '../components/Inspector'
 import { RefreshButton } from '../components/RefreshButton'
 import { SummaryPanel } from '../components/SummaryPanel'
 import type { DayEntry, GroupMode } from '../lib/entries'
-import { datedTitle } from '../lib/format'
+import { datedTitle, duration, weekdayShort } from '../lib/format'
 import { categoryColors, RESERVED_COLORS } from '../lib/palette'
 import type { OpenTimeState } from '../state/useOpenTime'
 
@@ -34,12 +35,16 @@ const TABS: Array<{ id: GroupMode; label: string; Icon: typeof IconList }> = [
 ]
 
 /**
- * Ranges the reporting layer can produce.
+ * Ranges this bar can switch to.
  *
- * Every one of these is built now. Day is this view; the rest hand off to
- * Reports, which owns the range arithmetic. The previous pass rendered Month
- * and Year disabled so the missing view was visible rather than pretended away
- * — that gap is closed, so the buttons work.
+ * Day and Week both stay on this view — Week swaps the hour grid for a strip
+ * of the trailing seven days, and picking one drops straight back to Day. A
+ * bug report is exactly what happens if this ever regresses: Week used to
+ * hand off to Reports like Month and Year still do, which meant clicking it
+ * silently left the calendar for an unrelated section of the app. Month and
+ * Year are real periods with their own layouts (a calendar grid, a heat
+ * grid) that this view has no room for, so those still open in Reports, and
+ * say so in their tooltip.
  */
 const RANGES: Array<{ id: 'day' | RangeKind; label: string }> = [
   { id: 'day', label: 'Day' },
@@ -72,6 +77,8 @@ export function CalendarView({
   onOpenReports(kind: RangeKind): void
 }) {
   const [mode, setMode] = useState<GroupMode>('category')
+  /** Day shows the hour grid below; week swaps it for a strip of the trailing seven days. Never leaves this view. */
+  const [rangeMode, setRangeMode] = useState<'day' | 'week'>('day')
   const [open, setOpen] = useState<{ entry: DayEntry; anchor: DOMRect } | null>(null)
   const [editing, setEditing] = useState<{
     session: Session | null
@@ -148,9 +155,10 @@ export function CalendarView({
     setEditing(null)
   }, [])
 
-  // Selection belongs to a day. Leaving it open across a date change would show
-  // a card describing a block that is no longer on screen.
-  useEffect(() => closeAll(), [day?.dayKey, mode, closeAll])
+  // Selection belongs to a day. Leaving it open across a date change, or
+  // across switching to the week strip (which has no entries to select at
+  // all), would show a card describing a block that is no longer on screen.
+  useEffect(() => closeAll(), [day?.dayKey, mode, rangeMode, closeAll])
 
   if (!day || !settings) return null
 
@@ -225,47 +233,63 @@ export function CalendarView({
     <div className="calendar">
       <section className="calendar-main">
         <div className="grid-tabs">
-          <div className="tabs">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                className={`tab${mode === tab.id ? ' on' : ''}`}
-                onClick={() => setMode(tab.id)}
-              >
-                <tab.Icon size={14} />
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {rangeMode === 'day' ? (
+            <div className="tabs">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  className={`tab${mode === tab.id ? ' on' : ''}`}
+                  onClick={() => setMode(tab.id)}
+                >
+                  <tab.Icon size={14} />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            // The grouping tabs describe one day's grid — meaningless above a
+            // week strip, so a hint takes their place rather than a row of
+            // tabs that silently do nothing.
+            <div className="grid-tabs-hint">Pick a day to open it here.</div>
+          )}
           <RefreshButton onRefresh={() => void app.refresh()} />
         </div>
 
         <div className="grid-datebar">
-          <h1 className="grid-date">{datedTitle(dayStart)}</h1>
+          <h1 className="grid-date">
+            {rangeMode === 'week' ? rangeLabel(rangeFor('week', day.dayKey)) : datedTitle(dayStart)}
+          </h1>
           <div className="grid-datenav">
             <div className="seg range-seg">
-              {RANGES.map((range) => (
-                <button
-                  key={range.id}
-                  className={range.id === 'day' ? 'on' : ''}
-                  /* The wider ranges leave the calendar entirely, so the
-                     tooltip says so — "Week view" promised a week on this grid
-                     and then moved the whole view out from under the click. */
-                  title={
-                    range.id === 'day'
-                      ? 'The day on this grid'
-                      : `Open the ${range.label.toLowerCase()} in Reports`
-                  }
-                  /* Day is already here; everything wider is Reports. */
-                  onClick={
-                    range.id === 'day'
-                      ? undefined
-                      : () => onOpenReports(range.id as RangeKind)
-                  }
-                >
-                  {range.label}
-                </button>
-              ))}
+              {RANGES.map((range) => {
+                const staysHere = range.id === 'day' || range.id === 'week'
+                return (
+                  <button
+                    key={range.id}
+                    className={staysHere ? (rangeMode === range.id ? 'on' : '') : ''}
+                    /* Month and Year leave the calendar entirely, so the
+                       tooltip says so — "Week view" used to promise a week on
+                       this grid and then move the whole view out from under
+                       the click. Week no longer does; only the wider periods
+                       still do, because they need layouts (a calendar grid, a
+                       heat grid) this view has no room for. */
+                    title={
+                      staysHere
+                        ? range.id === 'day'
+                          ? 'The day on this grid'
+                          : 'The trailing week on this grid'
+                        : `Open the ${range.label.toLowerCase()} in Reports`
+                    }
+                    onClick={
+                      staysHere
+                        ? () => setRangeMode(range.id as 'day' | 'week')
+                        : () => onOpenReports(range.id as RangeKind)
+                    }
+                  >
+                    {range.label}
+                  </button>
+                )
+              })}
             </div>
             <button
               className="icon-btn"
@@ -277,15 +301,15 @@ export function CalendarView({
             </button>
             <button
               className="icon-btn"
-              title="Previous day"
-              onClick={() => app.selectDay(shiftDayKey(day.dayKey, -1))}
+              title={rangeMode === 'week' ? 'Previous week' : 'Previous day'}
+              onClick={() => app.selectDay(shiftDayKey(day.dayKey, rangeMode === 'week' ? -7 : -1))}
             >
               <IconChevronLeft size={15} />
             </button>
             <button
               className="icon-btn"
-              title="Next day"
-              onClick={() => app.selectDay(shiftDayKey(day.dayKey, 1))}
+              title={rangeMode === 'week' ? 'Next week' : 'Next day'}
+              onClick={() => app.selectDay(shiftDayKey(day.dayKey, rangeMode === 'week' ? 7 : 1))}
               disabled={isToday}
             >
               <IconChevronRight size={15} />
@@ -315,29 +339,41 @@ export function CalendarView({
         ) : null}
 
         <div className="grid-scroll">
-          <DayGrid
-            dayKey={day.dayKey}
-            dayStartHour={settings.dayStartHour}
-            sessions={day.sessions}
-            idle={day.idle}
-            events={day.events}
-            projects={app.projects}
-            mode={mode}
-            selectedId={open?.entry.id ?? null}
-            pickedIds={pickedIds}
-            onSelect={(entry, anchor, additive) => {
-              if (!entry || !anchor) {
-                closeAll()
-                return
-              }
-              if (additive) {
-                addToSelection(entry)
-                return
-              }
-              setEditing(null)
-              setOpen({ entry, anchor })
-            }}
-          />
+          {rangeMode === 'week' ? (
+            <WeekStrip
+              days={weekSummaries}
+              selectedKey={day.dayKey}
+              todayKey={todayKey}
+              onSelectDay={(key) => {
+                app.selectDay(key)
+                setRangeMode('day')
+              }}
+            />
+          ) : (
+            <DayGrid
+              dayKey={day.dayKey}
+              dayStartHour={settings.dayStartHour}
+              sessions={day.sessions}
+              idle={day.idle}
+              events={day.events}
+              projects={app.projects}
+              mode={mode}
+              selectedId={open?.entry.id ?? null}
+              pickedIds={pickedIds}
+              onSelect={(entry, anchor, additive) => {
+                if (!entry || !anchor) {
+                  closeAll()
+                  return
+                }
+                if (additive) {
+                  addToSelection(entry)
+                  return
+                }
+                setEditing(null)
+                setOpen({ entry, anchor })
+              }}
+            />
+          )}
         </div>
       </section>
 
@@ -404,6 +440,69 @@ export function CalendarView({
         document.body
         )
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * The trailing week, as seven pickable day cards in place of the hour grid.
+ *
+ * `days` is `app.week` already summarised — the same trailing-seven-days
+ * payload the summary panel's baseline uses — so switching into week mode
+ * costs nothing extra to fetch. Picking a card is the only action: it
+ * selects that day and hands control straight back to Day mode, the same
+ * drill-down a month or year grid uses elsewhere in the app.
+ */
+function WeekStrip({
+  days,
+  selectedKey,
+  todayKey,
+  onSelectDay,
+}: {
+  days: DaySummary[]
+  selectedKey: string
+  todayKey: string
+  onSelectDay(key: string): void
+}) {
+  if (!days.length) return null
+
+  return (
+    <div className="week-strip">
+      {days.map((summary) => {
+        const date = parseYmdLocal(summary.dayKey)
+        const spend: Array<{ key: string; seconds: number; color: string }> = [
+          { key: 'focus', seconds: summary.productiveSeconds, color: 'var(--productive)' },
+          { key: 'neutral', seconds: summary.neutralSeconds, color: 'var(--neutral)' },
+          { key: 'distracting', seconds: summary.distractingSeconds, color: 'var(--distracting)' },
+          { key: 'away', seconds: summary.idleSeconds, color: 'var(--surface-4)' },
+        ]
+        const total = spend.reduce((sum, s) => sum + s.seconds, 0)
+
+        return (
+          <button
+            key={summary.dayKey}
+            className={`week-day${summary.dayKey === selectedKey ? ' on' : ''}${
+              summary.dayKey === todayKey ? ' today' : ''
+            }`}
+            onClick={() => onSelectDay(summary.dayKey)}
+          >
+            <div className="week-day-head">
+              <span className="week-day-name">{weekdayShort(date.getTime())}</span>
+              <span className="week-day-num">{date.getDate()}</span>
+            </div>
+            <div className="week-day-total">{summary.totalSeconds ? duration(summary.totalSeconds) : '—'}</div>
+            <div className="week-day-bar" aria-hidden="true">
+              {total
+                ? spend.map((s) =>
+                    s.seconds ? (
+                      <i key={s.key} style={{ flexGrow: s.seconds, background: s.color }} />
+                    ) : null
+                  )
+                : null}
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }

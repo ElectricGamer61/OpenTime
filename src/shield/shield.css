@@ -1,0 +1,132 @@
+/* The focus shield. Always dark: it sits over whatever was in front, so it is
+   a scrim first and a card second, whichever theme the app itself uses. */
+
+:root {
+  color-scheme: dark;
+  --text: #f3f3f5;
+  --text-dim: #a4a4ad;
+  --accent: #7c5cff;
+  --accent-hi: #9a80ff;
+  --card: #151517;
+  --line: #2c2c33;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI',
+    system-ui, sans-serif;
+  color: var(--text);
+}
+
+body {
+  display: grid;
+  place-items: center;
+  background: rgba(8, 8, 11, 0.94);
+  animation: in 160ms ease-out both;
+}
+
+.card {
+  width: min(460px, calc(100vw - 48px));
+  padding: 36px 36px 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.mark {
+  width: 52px;
+  height: 52px;
+  fill: none;
+  stroke: var(--accent-hi);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+h1 {
+  margin: 18px 0 10px;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.focus {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.focus b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.left {
+  display: block;
+  margin-top: 14px;
+  font-size: 30px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.left:empty {
+  display: none;
+}
+
+.hint {
+  margin: 18px 0 22px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #1e1e23;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:hover {
+  background: #26262c;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent-hi);
+  outline-offset: 2px;
+}
+
+@keyframes in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body {
+    animation: none;
+  }
+}

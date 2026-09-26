@@ -49,11 +49,15 @@ import type {
   EditResult,
   ExportRequest,
   ExportResult,
+  FeedbackKind,
   FocusEndResult,
   FocusStartResult,
   RecategorizeRequest,
   SessionEdit,
+  UpdateState,
 } from '../shared/ipc'
+import { feedbackUrl, RELEASES_URL } from '../shared/project'
+import { Blocker } from './blocker'
 import { createCapture, type Capture } from './capture'
 import { trayIcon, windowIconPath } from './icon'
 import { applyEdit } from './edits/applyEdit'
@@ -71,8 +75,12 @@ import {
 } from './calendar/google'
 import { FileStorage } from './storage/FileStorage'
 import { Tracker } from './tracker'
+import { Updater } from './updater'
 
 const DEV_SERVER_URL = process.env.OPENTIME_DEV_SERVER_URL
+/** Passed by the login item: start tracking in the tray without a window. */
+const HIDDEN_FLAG = '--hidden'
+let windowOpenedBefore = false
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -81,6 +89,8 @@ let tracker: Tracker
 let capture: Capture
 let captureHealth: CaptureHealth
 let tokens: TokenSet | null = null
+let blocker: Blocker | null = null
+let updater: Updater | null = null
 /**
  * The focus session running right now.
  *
@@ -162,7 +172,14 @@ function createWindow(): void {
   })
 
   // Paint only when there is something to show — no white flash on launch.
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
+  // At sign-in the window stays hidden: tracking runs from the tray, and the
+  // tray icon or Ctrl+Alt+O brings the window up.
+  // Only the very first window: one reopened later from the tray must show.
+  const startHidden = !windowOpenedBefore && process.argv.includes(HIDDEN_FLAG) && !!tray
+  windowOpenedBefore = true
+  mainWindow.once('ready-to-show', () => {
+    if (!startHidden) mainWindow?.show()
+  })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -234,6 +251,7 @@ function buildTrayMenu(): void {
           },
       { label: `Capture: ${status.captureAdapter}`, enabled: false },
       { type: 'separator' },
+      { label: 'Send feedback…', click: () => void openFeedback('question') },
       { label: 'Quit', click: () => app.quit() },
     ])
   )
@@ -647,6 +665,7 @@ async function endFocusSession(): Promise<FocusEndResult> {
   const endTime = Date.now()
   activeFocus = null
   buildTrayMenu()
+  blocker?.sync()
 
   try {
     const sealed = sealFocus(await storage.getSessions(key), focus, endTime)
@@ -677,6 +696,44 @@ async function endFocusSession(): Promise<FocusEndResult> {
   }
 }
 
+/**
+ * Start at sign-in - for an installed build only. From a dev checkout or the
+ * e2e suite, `process.execPath` is the bare Electron binary, and registering
+ * that would launch an empty Electron window at every login.
+ */
+function applyLoginItem(openAtLogin: boolean): void {
+  if (!app.isPackaged) return
+  // Started at sign-in, OpenTime goes straight to the tray; see createWindow.
+  app.setLoginItemSettings({ openAtLogin, args: [HIDDEN_FLAG] })
+}
+
+/** Open the GitHub feedback form for one kind of feedback in the browser. */
+async function openFeedback(kind: FeedbackKind): Promise<void> {
+  await shell.openExternal(
+    feedbackUrl(kind, { version: app.getVersion(), platform: `${process.platform} ${process.arch}` })
+  )
+}
+
+let quitPrepared = false
+
+/**
+ * Stop everything that writes and get it onto disk. Shared by an ordinary quit
+ * and by the updater, which must not start replacing the program files while
+ * the last minutes of tracking are still in memory.
+ */
+async function prepareToQuit(): Promise<void> {
+  if (quitPrepared) return
+  quitPrepared = true
+  globalShortcut.unregisterAll()
+  blocker?.dispose()
+  updater?.dispose()
+  tracker?.stop()
+  // Drain before flushing: `stop()` starts the final write, and flushing a
+  // store the last session has not reached yet would lose it.
+  await Promise.resolve(tracker?.drain())
+  await storage.flush()
+}
+
 // ── IPC ──────────────────────────────────────────────────────────────────────
 
 function registerIpc(): void {
@@ -699,6 +756,7 @@ function registerIpc(): void {
       captureNotice: captureHealth.demo ? captureHealth.notice : undefined,
       firstRun: !settings.onboardedAt,
       demoDays: storage.demoDays(),
+      update: updater?.state ?? { state: 'unsupported' },
     }
   })
 
@@ -729,7 +787,7 @@ function registerIpc(): void {
     await storage.saveSettings(settings)
     const saved = storage.getSettings()
     tracker.reconfigure(saved, storage.getProjects(), storage.getRules())
-    app.setLoginItemSettings({ openAtLogin: saved.launchAtLogin })
+    applyLoginItem(saved.launchAtLogin)
     // A changed capture mode should take effect now, not at the next launch.
     if (saved.captureMode !== before.captureMode) {
       initCapture()
@@ -739,6 +797,8 @@ function registerIpc(): void {
     // title-bar overlay colours to match.
     if (saved.theme !== before.theme) nativeTheme.themeSource = saved.theme
     if (saved.retentionDays !== before.retentionDays) await applyRetention()
+    blocker?.sync()
+    updater?.sync()
     broadcast(CHANNELS.dataEvent)
     return saved
   })
@@ -879,9 +939,19 @@ function registerIpc(): void {
     return health
   })
 
-  ipcMain.handle(CHANNELS.completeOnboarding, async (): Promise<Settings> => {
-    await storage.saveSettings({ ...storage.getSettings(), onboardedAt: Date.now() })
-    return storage.getSettings()
+  // First run saves the person's choices and the "done" marker in one write,
+  // so onboarding can never half-finish and come back.
+  ipcMain.handle(CHANNELS.completeOnboarding, async (_e, chosen?: Settings): Promise<Settings> => {
+    const before = storage.getSettings()
+    await storage.saveSettings({ ...before, ...(chosen || {}), onboardedAt: Date.now() })
+    const saved = storage.getSettings()
+    tracker.reconfigure(saved, storage.getProjects(), storage.getRules())
+    applyLoginItem(saved.launchAtLogin)
+    if (saved.theme !== before.theme) nativeTheme.themeSource = saved.theme
+    blocker?.sync()
+    updater?.sync()
+    broadcast(CHANNELS.dataEvent)
+    return saved
   })
 
   ipcMain.handle(
@@ -900,6 +970,7 @@ function registerIpc(): void {
       // block 45 minutes later.
       if (tracker.status.paused) tracker.resume()
       buildTrayMenu()
+      blocker?.sync()
       const status = statusNow()
       broadcast(CHANNELS.statusEvent, status)
       return { ok: true, status, focus: activeFocus }
@@ -907,6 +978,23 @@ function registerIpc(): void {
   )
 
   ipcMain.handle(CHANNELS.endFocus, (): Promise<FocusEndResult> => endFocusSession())
+
+  ipcMain.handle(CHANNELS.checkForUpdates, async (): Promise<UpdateState> => {
+    if (!updater || updater.state.state === 'unsupported') {
+      await shell.openExternal(RELEASES_URL)
+      return updater?.state ?? { state: 'unsupported' }
+    }
+    return updater.check()
+  })
+
+  ipcMain.handle(
+    CHANNELS.installUpdate,
+    async (): Promise<UpdateState> => updater?.install() ?? { state: 'unsupported' }
+  )
+
+  ipcMain.handle(CHANNELS.openFeedback, (_e, kind: FeedbackKind) =>
+    openFeedback(kind === 'bug' || kind === 'idea' ? kind : 'question')
+  )
 
   ipcMain.handle(CHANNELS.extendFocus, (_e, minutes: number): FocusStartResult => {
     if (!activeFocus) {
@@ -984,6 +1072,9 @@ if (!app.requestSingleInstanceLock()) {
     // real OS theme instead of always reading as light.
     nativeTheme.themeSource = settings.theme
     nativeTheme.on('updated', syncTitleBarOverlay)
+    // Re-register every launch, so a login item written by an older version
+    // (no --hidden, or an old install path) matches this build.
+    applyLoginItem(settings.launchAtLogin)
 
     tracker = new Tracker(
       {
@@ -1009,9 +1100,31 @@ if (!app.requestSingleInstanceLock()) {
       storage.getRules()
     )
 
-    registerIpc()
-    createWindow()
+    blocker = new Blocker({
+      capture: () => capture,
+      settings: () => storage.getSettings(),
+      focus: () => activeFocus,
+      // Windows can report a minimised window as still focused when nothing
+      // else took the foreground; only a window actually on screen counts.
+      mainWindowFocused: () =>
+        !!mainWindow &&
+        !mainWindow.isDestroyed() &&
+        mainWindow.isVisible() &&
+        !mainWindow.isMinimized() &&
+        mainWindow.isFocused(),
+      endFocus: () => endFocusSession(),
+    })
+    updater = new Updater({
+      publish: (state) => broadcast(CHANNELS.updateEvent, state),
+      autoCheckEnabled: () => storage.getSettings().checkForUpdates,
+      prepareToQuit,
+    })
+    updater.sync()
 
+    registerIpc()
+
+    // The tray comes first: a window started hidden at sign-in needs it to
+    // exist, or there would be no way back to the app.
     try {
       tray = new Tray(trayIcon())
       buildTrayMenu()
@@ -1020,6 +1133,8 @@ if (!app.requestSingleInstanceLock()) {
       // No system tray (some Linux sessions) — the app is still fully usable.
       console.error('[main] tray unavailable:', err)
     }
+
+    createWindow()
 
     tracker.start()
     registerGlobalShortcuts()
@@ -1039,17 +1154,12 @@ if (!app.requestSingleInstanceLock()) {
     if (!tray && process.platform !== 'darwin') app.quit()
   })
 
-  let quitting = false
   app.on('before-quit', (event) => {
-    if (!storage || quitting) return
-    quitting = true
+    // Already flushed - by an earlier pass through here, or by the updater
+    // before it launched the installer. Let the quit proceed.
+    if (!storage || quitPrepared) return
     event.preventDefault()
-    globalShortcut.unregisterAll()
-    tracker?.stop()
-    // Drain before flushing: `stop()` starts the final write, and flushing a
-    // store the last session has not reached yet would lose it.
-    void Promise.resolve(tracker?.drain())
-      .then(() => storage.flush())
+    void prepareToQuit()
       .catch((err) => console.error('[main] final flush failed:', err))
       .finally(() => app.exit(0))
   })

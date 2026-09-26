@@ -28,10 +28,12 @@ import type {
   EditResult,
   ExportRequest,
   ExportResult,
+  FeedbackKind,
   FocusEndResult,
   FocusStartResult,
   RecategorizeRequest,
   SessionEdit,
+  UpdateState,
 } from '../../shared/ipc'
 import { client } from './client'
 
@@ -54,6 +56,7 @@ export interface OpenTimeState {
   captureNotice?: string
   firstRun: boolean
   demoDays: string[]
+  update: UpdateState
   selectDay(key: string): void
   /** Read arbitrary day keys, for the reporting ranges the hook does not hold. */
   loadRange(keys: string[]): Promise<DayPayload[]>
@@ -75,7 +78,10 @@ export interface OpenTimeState {
   revealDataFolder(): Promise<void>
   clearDemoData(): Promise<ExportResult>
   reloadCapture(): Promise<CaptureHealth>
-  completeOnboarding(): Promise<void>
+  completeOnboarding(settings: Settings): Promise<void>
+  checkForUpdates(): Promise<UpdateState>
+  installUpdate(): Promise<UpdateState>
+  openFeedback(kind: FeedbackKind): Promise<void>
   startFocus(input: FocusStartInput): Promise<FocusStartResult>
   endFocus(): Promise<FocusEndResult>
   extendFocus(minutes: number): Promise<FocusStartResult>
@@ -89,6 +95,7 @@ export function useOpenTime(): OpenTimeState {
   const [day, setDay] = useState<DayPayload | null>(null)
   const [week, setWeek] = useState<DayPayload[]>([])
   const [weekKeys, setWeekKeys] = useState<string[]>([])
+  const [update, setUpdate] = useState<UpdateState>({ state: 'idle' })
   const selectedRef = useRef(selectedDay)
   selectedRef.current = selectedDay
 
@@ -109,6 +116,7 @@ export function useOpenTime(): OpenTimeState {
       const key = dayKey(Date.now(), bootstrap.settings.dayStartHour)
       setBoot(bootstrap)
       setStatus(bootstrap.status)
+      setUpdate(bootstrap.update)
       setSelectedDay(key)
       setWeekKeys(bootstrap.weekKeys)
       setDay(bootstrap.today)
@@ -122,6 +130,7 @@ export function useOpenTime(): OpenTimeState {
   // Status arrives as a push from the main process; it carries no session data,
   // so it never invalidates the aggregates.
   useEffect(() => api.onStatus(setStatus), [api])
+  useEffect(() => api.onUpdate(setUpdate), [api])
 
   // Data changes are a signal, not a payload — refetch the two things on screen.
   useEffect(
@@ -300,10 +309,27 @@ export function useOpenTime(): OpenTimeState {
     [api]
   )
 
-  const completeOnboarding = useCallback(async () => {
-    const saved = await api.completeOnboarding()
-    setBoot((prev) => (prev ? { ...prev, settings: saved, firstRun: false } : prev))
+  const completeOnboarding = useCallback(
+    async (settings: Settings) => {
+      const saved = await api.completeOnboarding(settings)
+      setBoot((prev) => (prev ? { ...prev, settings: saved, firstRun: false } : prev))
+    },
+    [api]
+  )
+
+  const checkForUpdates = useCallback(async () => {
+    const next = await api.checkForUpdates()
+    setUpdate(next)
+    return next
   }, [api])
+
+  const installUpdate = useCallback(async () => {
+    const next = await api.installUpdate()
+    setUpdate(next)
+    return next
+  }, [api])
+
+  const openFeedback = useCallback((kind: FeedbackKind) => api.openFeedback(kind), [api])
 
   return useMemo(
     () => ({
@@ -325,6 +351,7 @@ export function useOpenTime(): OpenTimeState {
       captureNotice: boot?.captureNotice,
       firstRun: boot?.firstRun ?? false,
       demoDays: boot?.demoDays ?? [],
+      update,
       selectDay,
       loadRange,
       refresh,
@@ -346,6 +373,9 @@ export function useOpenTime(): OpenTimeState {
       clearDemoData,
       reloadCapture,
       completeOnboarding,
+      checkForUpdates,
+      installUpdate,
+      openFeedback,
       startFocus,
       endFocus,
       extendFocus,
@@ -378,6 +408,10 @@ export function useOpenTime(): OpenTimeState {
       clearDemoData,
       reloadCapture,
       completeOnboarding,
+      checkForUpdates,
+      installUpdate,
+      openFeedback,
+      update,
       startFocus,
       endFocus,
       extendFocus,

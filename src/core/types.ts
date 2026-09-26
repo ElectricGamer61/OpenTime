@@ -23,6 +23,12 @@ export interface WindowSample {
   url?: string
   /** Absolute path of the focused executable, when the platform exposes it. */
   execPath?: string
+  /**
+   * Where the window is, in physical screen pixels, when the platform says.
+   * Live-only: it tells the focus shield which display to cover, and is never
+   * copied into a session or written to disk.
+   */
+  bounds?: { x: number; y: number; width: number; height: number }
 }
 
 /**
@@ -187,7 +193,28 @@ export interface Settings {
   theme: 'system' | 'light' | 'dark'
   /** Epoch ms the first-run checklist was completed; undefined until then. */
   onboardedAt?: number
+  /**
+   * Ask GitHub whether a newer release exists. Off until the user says yes in
+   * onboarding or Settings: it is the only network call OpenTime makes on its
+   * own, so it is never switched on silently.
+   */
+  checkForUpdates: boolean
+  blocking: BlockingSettings
   calendar: CalendarSettings
+}
+
+/**
+ * Distraction blocking during focus sessions. Opt-in, and scoped to focus
+ * sessions only: outside one, OpenTime never covers a window.
+ */
+export interface BlockingSettings {
+  enabled: boolean
+  /**
+   * What to block, normalised by `normalizeBlockTarget`: a site host
+   * ("youtube.com", which also covers its subdomains) or an app/word
+   * ("steam", "discord").
+   */
+  targets: string[]
 }
 
 export interface CalendarSettings {

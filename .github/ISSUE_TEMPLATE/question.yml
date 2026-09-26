@@ -1,0 +1,10 @@
+name: Ask a question
+description: Not sure how something works, or anything else on your mind.
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question or comment
+    validations:
+      required: true

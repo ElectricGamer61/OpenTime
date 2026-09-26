@@ -4,7 +4,7 @@ import type { DaySummary } from '../../core/aggregate'
 import { dayElapsedShare, evaluateGoal } from '../../core/goals'
 import type { Goal } from '../../core/types'
 import type { GroupMode } from '../lib/entries'
-import { duration, percent } from '../lib/format'
+import { duration, EMPTY_VALUE, percent } from '../lib/format'
 import type { Slice } from './Charts'
 import { Donut, StackedBar } from './Charts'
 import { IconChevronRight, IconSettings } from './Icons'
@@ -75,9 +75,10 @@ export const SummaryPanel = memo(function SummaryPanel({
     return (summary.productiveSeconds - mean) / mean
   }, [week, summary])
 
-  const productiveShare = summary.totalSeconds
-    ? summary.productiveSeconds / summary.totalSeconds
-    : 0
+  // Before anything is tracked there is no score to show, and a "0 out of 100"
+  // on a brand-new install reads as a verdict rather than as "not yet".
+  const tracked = summary.totalSeconds > 0
+  const productiveShare = tracked ? summary.productiveSeconds / summary.totalSeconds : 0
 
   const spend: Slice[] = [
     { key: 'focus', label: 'Focus', seconds: summary.productiveSeconds, color: 'var(--productive)' },
@@ -127,10 +128,14 @@ export const SummaryPanel = memo(function SummaryPanel({
         <div className="headline-stat">
           <div className="headline-label">{target ? 'Percent of target' : 'Focus score'}</div>
           <div className="headline-value">
-            {target ? percent(target.ratio) : summary.focusScore}
+            {target ? percent(target.ratio) : tracked ? summary.focusScore : EMPTY_VALUE}
           </div>
           <div className="headline-delta muted">
-            {target ? `of ${duration(target.goal.seconds)} · ${target.goal.name}` : 'out of 100'}
+            {target
+              ? `of ${duration(target.goal.seconds)} · ${target.goal.name}`
+              : tracked
+                ? 'out of 100'
+                : 'Starts once time is tracked'}
           </div>
         </div>
       </div>
@@ -148,8 +153,10 @@ export const SummaryPanel = memo(function SummaryPanel({
       <div className="summary-cards">
         <div className="mini-card">
           <div className="mini-label">Percent of work day</div>
-          <div className="mini-value">{percent(productiveShare)}</div>
-          <div className="mini-foot">focus, of {duration(summary.totalSeconds)} tracked</div>
+          <div className="mini-value">{tracked ? percent(productiveShare) : EMPTY_VALUE}</div>
+          <div className="mini-foot">
+            {tracked ? `focus, of ${duration(summary.totalSeconds)} tracked` : 'Nothing tracked yet'}
+          </div>
         </div>
         <div className="mini-card">
           <div className="mini-label">Focus time</div>
@@ -160,7 +167,9 @@ export const SummaryPanel = memo(function SummaryPanel({
               {Math.round(focusBaseline * 100)}% vs your average
             </div>
           ) : (
-            <div className="mini-foot">longest block {duration(summary.longestFocusSeconds)}</div>
+            <div className="mini-foot">
+              {tracked ? `longest block ${duration(summary.longestFocusSeconds)}` : 'Nothing tracked yet'}
+            </div>
           )}
         </div>
       </div>

@@ -31,10 +31,13 @@ const api: OpenTimeApi = {
   revealDataFolder: () => ipcRenderer.invoke(CHANNELS.revealDataFolder),
   clearDemoData: () => ipcRenderer.invoke(CHANNELS.clearDemoData),
   reloadCapture: () => ipcRenderer.invoke(CHANNELS.reloadCapture),
-  completeOnboarding: () => ipcRenderer.invoke(CHANNELS.completeOnboarding),
+  completeOnboarding: (settings) => ipcRenderer.invoke(CHANNELS.completeOnboarding, settings),
   startFocus: (input) => ipcRenderer.invoke(CHANNELS.startFocus, input),
   endFocus: () => ipcRenderer.invoke(CHANNELS.endFocus),
   extendFocus: (minutes) => ipcRenderer.invoke(CHANNELS.extendFocus, minutes),
+  checkForUpdates: () => ipcRenderer.invoke(CHANNELS.checkForUpdates),
+  installUpdate: () => ipcRenderer.invoke(CHANNELS.installUpdate),
+  openFeedback: (kind) => ipcRenderer.invoke(CHANNELS.openFeedback, kind),
   onStatus: (handler) => {
     const listener = (_e: unknown, status: Parameters<typeof handler>[0]) => handler(status)
     ipcRenderer.on(CHANNELS.statusEvent, listener)
@@ -44,6 +47,11 @@ const api: OpenTimeApi = {
     const listener = () => handler()
     ipcRenderer.on(CHANNELS.dataEvent, listener)
     return () => ipcRenderer.removeListener(CHANNELS.dataEvent, listener)
+  },
+  onUpdate: (handler) => {
+    const listener = (_e: unknown, state: Parameters<typeof handler>[0]) => handler(state)
+    ipcRenderer.on(CHANNELS.updateEvent, listener)
+    return () => ipcRenderer.removeListener(CHANNELS.updateEvent, listener)
   },
 }
 

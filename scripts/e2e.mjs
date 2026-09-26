@@ -23,12 +23,43 @@ const OUT = process.argv[3] || path.join(ROOT, '.e2e/out')
 // Unique per run: a stale instance on a fixed port makes the whole suite attach
 // to the wrong app and report a green run against a store it never created.
 const PORT = Number(process.env.CDP_PORT || (9400 + (process.pid % 500)))
+// The main process's own inspector: the only honest way to ask whether a
+// window (the focus shield) is really on screen, rather than whether its page
+// loaded.
+const INSPECT_PORT = PORT + 1000
 
 const results = []
 const pass = (n, d = '') => { results.push({ ok: true, n, d }); console.log(`  PASS  ${n}${d ? ' — ' + d : ''}`) }
 const fail = (n, d = '') => { results.push({ ok: false, n, d }); console.log(`  FAIL  ${n}${d ? ' — ' + d : ''}`) }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/** Evaluate an expression in the Electron main process, where `require` works. */
+async function mainEval(expr) {
+  const list = await (await fetch(`http://127.0.0.1:${INSPECT_PORT}/json/list`)).json()
+  const ws = new WebSocket(list[0].webSocketDebuggerUrl)
+  await new Promise((r) => ws.addEventListener('open', r))
+  try {
+    const res = await new Promise((resolve) => {
+      ws.addEventListener('message', (e) => {
+        const m = JSON.parse(e.data)
+        if (m.id === 1) resolve(m)
+      })
+      ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: {
+        expression: expr, returnByValue: true, awaitPromise: true, includeCommandLineAPI: true } }))
+    })
+    if (res.result?.exceptionDetails) throw new Error(res.result.exceptionDetails.exception?.description)
+    return res.result?.result?.value
+  } finally {
+    ws.close()
+  }
+}
+
+/** The focus shield window as the main process sees it. */
+const shieldState = () => mainEval(`(() => {
+  const w = require('electron').BrowserWindow.getAllWindows().find(x => /shield/.test(x.getTitle()))
+  return w ? { exists: true, visible: w.isVisible(), top: w.isAlwaysOnTop(), focusable: w.isFocusable() } : { exists: false, visible: false }
+})()`)
 
 async function cdpTargets() {
   const res = await fetch(`http://127.0.0.1:${PORT}/json/list`)
@@ -78,7 +109,17 @@ async function connect() {
 }
 
 async function shoot(s, name) {
-  const r = await s.send('Page.captureScreenshot', { format: 'png' })
+  // A window that is not painting (minimised, or the display asleep) never
+  // produces the frame a capture waits for. A missing screenshot is noted, not
+  // a reason to hang the whole run.
+  const r = await Promise.race([
+    s.send('Page.captureScreenshot', { format: 'png' }),
+    sleep(8000).then(() => null),
+  ])
+  if (!r) {
+    console.log(`  note  screenshot ${name} skipped: the window produced no frame`)
+    return
+  }
   await fs.writeFile(path.join(OUT, name), Buffer.from(r.data, 'base64'))
 }
 
@@ -110,10 +151,18 @@ async function main() {
   // shows fabricated history) — most of this suite exercises merge/retime/
   // retag against a day that has to already exist, so it opts in the same way
   // a user would in Settings, before the app ever boots against this store.
+  //
+  // `captureMode: 'demo'` is part of that opt-in, not a convenience: seeding
+  // needs `captureIsDemo` too (see `shouldSeedDemo`), and on a host where
+  // native capture actually works - any real Windows or macOS machine, i.e.
+  // the platforms this app ships to - leaving it on 'auto' seeds nothing and
+  // the whole suite aborts on the store guard below. Pinning the adapter also
+  // keeps the fixture deterministic instead of varying with whatever the host
+  // happens to have focused while the suite runs.
   await fs.mkdir(path.join(USER_DATA, 'opentime'), { recursive: true })
   await fs.writeFile(
     path.join(USER_DATA, 'opentime', 'meta.json'),
-    JSON.stringify({ version: 2, settings: { seedDemoWhenUnavailable: true } }),
+    JSON.stringify({ version: 2, settings: { seedDemoWhenUnavailable: true, captureMode: 'demo' } }),
     'utf8'
   )
   console.log(`run: port=${PORT} userData=${USER_DATA}`)
@@ -130,7 +179,7 @@ async function main() {
   // grandchild — which then survives the run, holds the CDP port, and makes the
   // NEXT run silently attach to a stale instance. Own the process group.
   const child = spawn(path.join(ROOT, 'node_modules/electron/dist/electron'),
-    ['.', `--user-data-dir=${USER_DATA}`, '--disable-gpu',
+    ['.', `--user-data-dir=${USER_DATA}`, '--disable-gpu', `--inspect=${INSPECT_PORT}`,
      `--remote-debugging-port=${PORT}`, '--remote-allow-origins=*'], {
     cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
   })
@@ -163,14 +212,29 @@ async function main() {
 
     // First run shows onboarding; dismiss it the way a user would.
     const hadOnboard = await s.eval(`return !!document.querySelector('.onboard')`)
+    hadOnboard ? pass('a fresh install opens onboarding') : fail('a fresh install opens onboarding')
     if (hadOnboard) {
       await shoot(s, '00-onboarding.png')
-      const done = await s.eval(`
-        const b = [...document.querySelectorAll('.onboard button')].pop()
-        if (!b) return false
-        b.click(); await new Promise(r => setTimeout(r, 800)); return !document.querySelector('.onboard')
+      const walk = await s.eval(`
+        const steps = []
+        for (let i = 0; i < 6 && document.querySelector('.onboard'); i++) {
+          steps.push(document.querySelector('.onboard').dataset.step)
+          const next = document.querySelector('.onboard-actions .btn.primary')
+          next.click(); await new Promise(r => setTimeout(r, 700))
+        }
+        const b = await window.opentime.getBootstrap()
+        return { steps, gone: !document.querySelector('.onboard'), onboarded: !!b.settings.onboardedAt, firstRun: b.firstRun }
       `)
-      done ? pass('onboarding completes and dismisses') : fail('onboarding completes and dismisses')
+      walk.steps.join(',') === 'welcome,tour,setup,done' && walk.gone && walk.onboarded && !walk.firstRun
+        ? pass('onboarding walks four steps and completes', walk.steps.join(' → '))
+        : fail('onboarding walks four steps and completes', JSON.stringify(walk))
+
+      // Once ever: a reload (the same as relaunching the renderer) must not
+      // bring it back, because the marker lives in the store.
+      await s.eval(`location.reload(); return 1`).catch(() => {})
+      await sleep(3000)
+      const again = await s.eval(`return !!document.querySelector('.onboard')`)
+      !again ? pass('onboarding never shows a second time') : fail('onboarding never shows a second time')
     }
 
     const boot = await s.eval(`return await window.opentime.getBootstrap()`)
@@ -220,19 +284,20 @@ async function main() {
     dash.week === 7 ? pass('week chart shows seven columns') : fail('week chart shows seven columns', String(dash.week))
     dash.now ? pass('Now card shows a live timer') : fail('Now card shows a live timer')
 
-    // ── 2b. The workspace card opens unclipped ─────────────────────────────
-    // It used to render inside the rail, which is `overflow: hidden` and
-    // narrower than the card, so it was sliced off mid-sentence. Assert the
-    // whole card is inside the viewport and inside every clipping ancestor,
-    // rather than just that it exists — existence was already true when it was
-    // unreadable. Checked at the default width and at a narrow one.
+    // ── 2b. The feedback menu opens unclipped ──────────────────────────────
+    // Portalled out of the title bar and placed from its trigger. Assert the
+    // whole card is inside the viewport and every clipping ancestor, at the
+    // default width and at a narrow one. The items are not clicked: each one
+    // opens the browser.
     for (const [label, width] of [['default width', 1440], ['a narrow window', 900]]) {
       await s.send('Emulation.setDeviceMetricsOverride',
         { width, height: 900, deviceScaleFactor: 0, mobile: false })
       const card = await s.eval(`
-        document.querySelector('.workspace').click()
+        const trigger = [...document.querySelectorAll('.titlebar-link')].find(b => /feedback/i.test(b.textContent))
+        if (!trigger) return { open: false, err: 'no Feedback button in the title bar' }
+        trigger.click()
         await new Promise(r => setTimeout(r, 500))
-        const menu = document.querySelector('.workspace-menu')
+        const menu = document.querySelector('.menu-card')
         if (!menu) return { open: false }
         const m = menu.getBoundingClientRect()
         const clipped = []
@@ -243,16 +308,15 @@ async function main() {
           if (m.left < r.left - 1 || m.right > r.right + 1 || m.top < r.top - 1 || m.bottom > r.bottom + 1)
             clipped.push(el.className || el.tagName)
         }
-        const head = menu.querySelector('.workspace-menu-head')
+        const items = [...menu.querySelectorAll('.menu-item b')].map(b => b.textContent)
         const onscreen = m.left >= 0 && m.top >= 0 && m.right <= innerWidth && m.bottom <= innerHeight
-        document.querySelector('.workspace').click()
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
         await new Promise(r => setTimeout(r, 300))
-        return { open: true, clipped, onscreen, width: Math.round(m.width),
-                 headOverflows: head.scrollWidth > head.clientWidth + 1 }
+        return { open: true, clipped, onscreen, items, closed: !document.querySelector('.menu-card') }
       `)
-      const ok = card.open && card.onscreen && !card.clipped.length && !card.headOverflows
-      ok ? pass(`workspace card opens fully visible at ${label}`, `${card.width}px wide`)
-         : fail(`workspace card opens fully visible at ${label}`, JSON.stringify(card))
+      const ok = card.open && card.onscreen && !card.clipped.length && card.items.length === 3 && card.closed
+      ok ? pass(`feedback menu opens fully visible at ${label}`, card.items.join(', '))
+         : fail(`feedback menu opens fully visible at ${label}`, JSON.stringify(card))
     }
     await s.send('Emulation.clearDeviceMetricsOverride')
 
@@ -288,6 +352,31 @@ async function main() {
     folding.blocks <= folding.shown + folding.blocks && folding.stored > 0
       ? pass('folded blocks carry a duration', `${folding.shown} of ${folding.blocks} blocks labelled with a duration`)
       : fail('folded blocks carry a duration', JSON.stringify(folding))
+
+    // ── 3b. Calendar > Week stays in Calendar and changes the selected week ─
+    // Regression: Week used to behave like Month/Year and navigate away to
+    // Reports. It must instead toggle the grid itself, in place.
+    const weekNav = await s.eval(`
+      const week = [...document.querySelectorAll('.range-seg button')].find(b => b.textContent.trim() === 'Week')
+      if (!week) return { err: 'no Week button on the calendar date bar' }
+      week.click(); await new Promise(r => setTimeout(r, 400))
+      const tabAfterWeek = document.querySelector('.nav-item.active')?.textContent.trim()
+      const days = document.querySelectorAll('.week-strip .week-day').length
+      // Click today's own tile — restores the day this suite started on
+      // rather than wandering the selected day off to whichever tile is
+      // first, which would break every test after this one.
+      const day = document.querySelector('.week-strip .week-day.today') || document.querySelector('.week-strip .week-day')
+      if (!day) return { err: 'week strip did not render any days', tabAfterWeek, days }
+      day.click(); await new Promise(r => setTimeout(r, 400))
+      const tabAfterDayClick = document.querySelector('.nav-item.active')?.textContent.trim()
+      const backToGrid = document.querySelectorAll('.daygrid .entry, .daygrid-hour').length > 0
+      return { tabAfterWeek, days, tabAfterDayClick, backToGrid }
+    `)
+    await shoot(s, '02b-calendar-week.png')
+    weekNav.err ? fail('Calendar > Week stays in Calendar', weekNav.err)
+      : weekNav.tabAfterWeek === 'Calendar' && weekNav.days === 7 && weekNav.tabAfterDayClick === 'Calendar' && weekNav.backToGrid
+        ? pass('Calendar > Week stays in Calendar', `${weekNav.days} days shown, day click returned to the grid`)
+        : fail('Calendar > Week stays in Calendar', JSON.stringify(weekNav))
 
     // ── 4. Correction: retag a block through the UI ────────────────────────
     const openDrawer = `
@@ -551,45 +640,99 @@ async function main() {
         ? pass('run a focus session end to end', `started, extended by 15m, ended with "${focus.reported}"`)
         : fail('run a focus session end to end', JSON.stringify(focus))
 
-    // ── 7b. A music timer, start to finish ─────────────────────────────────
-    // Unlike a focus session this never touches `window.opentime` at all — it
-    // is renderer-only by design — so the check is purely DOM-level: start
-    // it, switch track mid-run without losing the countdown, extend it, stop
-    // it, and confirm it leaves nothing behind (no completion sheet, unlike
-    // focus, because there is nothing to report).
+    // ── 7b. The ambient music player, not a timer ──────────────────────────
+    // It never touches `window.opentime` at all — it is renderer-only by
+    // design — so the check is purely DOM-level: open it from the rail,
+    // switch tracks, toggle play, move the volume, and confirm the day's
+    // stored sessions are untouched (it must never create tracked time).
     const music = await s.eval(`${REACT_SET}
-      const start = [...document.querySelectorAll('.rail button')].find(b => /music timer/i.test(b.textContent))
-      if (!start) return { err: 'no Music timer button on the rail' }
+      const key = ${JSON.stringify(boot.today.dayKey)}
+      const before = (await window.opentime.getDay(key)).sessions.length
+      const trigger = document.querySelector('.rail-music .music-player-trigger')
+      if (!trigger) return { err: 'no music trigger on the rail' }
+      trigger.click(); await new Promise(r => setTimeout(r, 300))
+      const menu = document.querySelector('.music-player-menu')
+      if (!menu) return { err: 'music popover did not open' }
+      const tracks = menu.querySelectorAll('.music-player-track').length
+      const whale = [...menu.querySelectorAll('.music-player-track')].find(b => /Whale song/.test(b.textContent))
+      if (!whale) return { err: 'no Whale song track option' }
+      whale.click(); await new Promise(r => setTimeout(r, 300))
+      const playingAfterPick = menu.querySelector('.music-player-controls .icon-btn.on') !== null
+      const nowPlaying = menu.querySelector('.music-player-now')?.textContent
+      const toggle = menu.querySelector('.music-player-controls .icon-btn')
+      toggle.click(); await new Promise(r => setTimeout(r, 200))
+      const pausedAfterToggle = menu.querySelector('.music-player-controls .icon-btn.on') === null
+      const vol = menu.querySelector('.music-player-volume input')
+      setVal(vol, '0.3')
+      await new Promise(r => setTimeout(r, 150))
+      document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      await new Promise(r => setTimeout(r, 200))
+      const after = (await window.opentime.getDay(key)).sessions.length
+      return { tracks, nowPlaying, playingAfterPick, pausedAfterToggle,
+               closed: !document.querySelector('.music-player-menu'),
+               untouched: after === before }
+    `)
+    music.err ? fail('the ambient music player never tracks time', music.err)
+      : music.tracks === 4 && /Whale song/.test(music.nowPlaying || '') && music.playingAfterPick &&
+        music.pausedAfterToggle && music.closed && music.untouched
+        ? pass('the ambient music player never tracks time', `picked ${music.nowPlaying}, paused, volume set, day untouched`)
+        : fail('the ambient music player never tracks time', JSON.stringify(music))
+
+    // ── 7c. Pomodoro: work is a real focus session, break is not ───────────
+    // Pause seals the in-progress work session and resume opens a fresh one
+    // for the remainder — the same primitives a plain focus session uses, so
+    // this only has to prove the phases wire up correctly, not re-prove
+    // sealing itself (that is `tests/focus.test.ts`'s job).
+    const pomodoro = await s.eval(`${REACT_SET}
+      const start = [...document.querySelectorAll('.rail button')].find(b => /start focus/i.test(b.textContent))
+      if (!start) return { err: 'no Start focus button on the rail' }
       start.click(); await new Promise(r => setTimeout(r, 600))
       const sheet = document.querySelector('.focus-sheet')
-      if (!sheet) return { err: 'music setup sheet did not open' }
-      const lofi = [...sheet.querySelectorAll('.focus-bed')].find(b => /Lo-fi/.test(b.textContent))
-      if (!lofi) return { err: 'no Lo-fi track option' }
-      lofi.click(); await new Promise(r => setTimeout(r, 150))
-      const go = [...sheet.querySelectorAll('.focus-sheet-foot button')].find(b => /^Start$/.test(b.textContent.trim()))
-      if (!go) return { err: 'no start button on the music sheet' }
+      if (!sheet) return { err: 'focus sheet did not open' }
+      const pomodoroTab = [...sheet.querySelectorAll('.focus-mode-seg button')].find(b => /Pomodoro/.test(b.textContent))
+      if (!pomodoroTab) return { err: 'no Pomodoro tab on the focus sheet' }
+      pomodoroTab.click(); await new Promise(r => setTimeout(r, 150))
+      setVal(document.querySelector('#focus-goal'), 'QA pomodoro block')
+      await new Promise(r => setTimeout(r, 150))
+      const classic = [...sheet.querySelectorAll('.focus-durations button')].find(b => b.textContent.trim() === '25 / 5')
+      if (!classic) return { err: 'no 25 / 5 preset' }
+      classic.click(); await new Promise(r => setTimeout(r, 150))
+      const go = [...sheet.querySelectorAll('.focus-sheet-foot button')].find(b => /start pomodoro/i.test(b.textContent))
+      if (!go) return { err: 'no Start Pomodoro button' }
       go.click(); await new Promise(r => setTimeout(r, 1200))
-      const dock = document.querySelector('.music-dock')
-      if (!dock) return { err: 'music dock did not appear after starting' }
-      const labelBefore = dock.querySelector('.focus-dock-label')?.textContent
-      const extend = [...dock.querySelectorAll('button')].find(b => /15m/.test(b.textContent))
-      extend.click(); await new Promise(r => setTimeout(r, 400))
-      const picker = dock.querySelector('.focus-sound-wrap .icon-btn')
-      picker.click(); await new Promise(r => setTimeout(r, 200))
-      const whale = [...document.querySelectorAll('.focus-sound-menu button')].find(b => /Whale song/.test(b.textContent))
-      if (!whale) return { err: 'no Whale song option in the track menu' }
-      whale.click(); await new Promise(r => setTimeout(r, 400))
-      const labelAfter = document.querySelector('.music-dock .focus-dock-label')?.textContent
-      const stop = [...document.querySelectorAll('.music-dock button')].find(b => /^Stop$/.test(b.textContent.trim()))
-      stop.click(); await new Promise(r => setTimeout(r, 500))
-      return { labelBefore, labelAfter,
-               closed: !document.querySelector('.music-dock'),
-               noReportSheet: !document.querySelector('.focus-sheet.done') }
+      let dock = document.querySelector('.pomodoro-dock')
+      if (!dock) return { err: 'pomodoro dock did not appear after starting' }
+      const phase1 = dock.className
+      const focusDuringWork = (await window.opentime.getStatus()).focus
+      const pause = [...dock.querySelectorAll('.focus-dock-actions button')].find(b => /^(Pause|Resume)$/i.test(b.title || ''))
+      pause.click(); await new Promise(r => setTimeout(r, 900))
+      dock = document.querySelector('.pomodoro-dock')
+      const pausedClass = dock.className
+      const focusWhilePaused = (await window.opentime.getStatus()).focus
+      const resume = [...dock.querySelectorAll('.focus-dock-actions button')].find(b => /^(Pause|Resume)$/i.test(b.title || ''))
+      resume.click(); await new Promise(r => setTimeout(r, 900))
+      dock = document.querySelector('.pomodoro-dock')
+      const focusAfterResume = (await window.opentime.getStatus()).focus
+      const skip = [...dock.querySelectorAll('button')].find(b => /^Skip$/.test(b.textContent.trim()))
+      skip.click(); await new Promise(r => setTimeout(r, 900))
+      dock = document.querySelector('.pomodoro-dock')
+      const phaseAfterSkip = dock.className
+      const focusOnBreak = (await window.opentime.getStatus()).focus
+      const stop = [...dock.querySelectorAll('button')].find(b => /^Stop$/.test(b.textContent.trim()))
+      stop.click(); await new Promise(r => setTimeout(r, 600))
+      return {
+        startedOnWork: /\\bwork\\b/.test(phase1) && !!focusDuringWork,
+        sealedOnPause: /\\bpaused\\b/.test(pausedClass) && !focusWhilePaused,
+        reopenedOnResume: !!focusAfterResume,
+        movedToBreak: /\\bbreak\\b/.test(phaseAfterSkip) && !focusOnBreak,
+        stoppedCleanly: !document.querySelector('.pomodoro-dock'),
+      }
     `)
-    music.err ? fail('run a music timer end to end', music.err)
-      : music.labelBefore === 'Lo-fi' && music.labelAfter === 'Whale song' && music.closed && music.noReportSheet
-        ? pass('run a music timer end to end', `switched ${music.labelBefore} → ${music.labelAfter}, extended, stopped cleanly`)
-        : fail('run a music timer end to end', JSON.stringify(music))
+    pomodoro.err ? fail('run a Pomodoro cycle end to end', pomodoro.err)
+      : pomodoro.startedOnWork && pomodoro.sealedOnPause && pomodoro.reopenedOnResume &&
+        pomodoro.movedToBreak && pomodoro.stoppedCleanly
+        ? pass('run a Pomodoro cycle end to end', 'work → pause (sealed) → resume (reopened) → skip to break → stop')
+        : fail('run a Pomodoro cycle end to end', JSON.stringify(pomodoro))
 
     // ── 8. Activity: the raw record ────────────────────────────────────────
     await clickTab(s, 'Activity')
@@ -806,14 +949,14 @@ async function main() {
 
     // Appearance, through the real control — the one owner of `data-theme`.
     const theme = await s.eval(`
-      ;[...document.querySelectorAll('.settings-nav button')].find(b => /application/i.test(b.textContent)).click()
+      ;[...document.querySelectorAll('.settings-nav button')].find(b => /general/i.test(b.textContent)).click()
       await new Promise(r => setTimeout(r, 300))
       const seg = [...document.querySelectorAll('.seg')].find(g =>
-        [...g.querySelectorAll('button')].map(b => b.textContent.trim()).join(',') === 'System,Light,Dark')
+        [...g.querySelectorAll('button')].map(b => b.textContent.trim()).join(',') === 'Light,Dark,Match system')
       if (!seg) return { err: 'no Appearance control' }
       const opt = (label) => [...seg.querySelectorAll('button')].find(b => b.textContent.trim() === label)
       const seen = {}
-      for (const label of ['Light', 'Dark', 'System']) {
+      for (const label of ['Light', 'Dark', 'Match system']) {
         opt(label).click(); await new Promise(r => setTimeout(r, 350))
         seen[label] = {
           scheme: getComputedStyle(document.documentElement).getPropertyValue('color-scheme').trim(),
@@ -850,6 +993,102 @@ async function main() {
       : rangeUi.options.length >= 4 && /^7 stored days/.test(rangeUi.desc || '')
         ? pass('export range narrows the day count', `${rangeUi.desc} from ${rangeUi.options.length} choices`)
         : fail('export range narrows the day count', JSON.stringify(rangeUi))
+
+    // ── 12b. Distraction blocking, from the Settings editor to the shield ──
+    const blockUi = await s.eval(`
+      ;[...document.querySelectorAll('.settings-nav button')].find(b => /focus/i.test(b.textContent)).click()
+      await new Promise(r => setTimeout(r, 300))
+      const pane = [...document.querySelectorAll('.settings-pane > .card')].find(c => !c.hidden)
+      const toggle = [...pane.querySelectorAll('.switch')].find(t => /block distractions/i.test(t.getAttribute('aria-label')))
+      if (!toggle) return { err: 'no blocking switch' }
+      if (!toggle.classList.contains('on')) toggle.click()
+      const input = [...pane.querySelectorAll('input')].find(x => /website or app/i.test(x.placeholder))
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+      set.call(input, 'https://www.Example.com/some/page'); input.dispatchEvent(new Event('input', { bubbles: true }))
+      await new Promise(r => setTimeout(r, 100))
+      input.nextElementSibling.click(); await new Promise(r => setTimeout(r, 200))
+      const chips = [...pane.querySelectorAll('.chip-list .chip')].map(c => c.textContent.trim())
+      const save = [...document.querySelectorAll('.page-head button')].find(x => x.textContent.trim() === 'Save')
+      save.click(); await new Promise(r => setTimeout(r, 800))
+      const b = (await window.opentime.getBootstrap()).settings.blocking
+      return { chips, enabled: b.enabled, saved: b.targets.includes('example.com') }
+    `)
+    !blockUi.err && blockUi.enabled && blockUi.saved && blockUi.chips.includes('example.com')
+      ? pass('a blocked site is added from Settings, normalised and saved', 'https://www.Example.com/some/page → example.com')
+      : fail('a blocked site is added from Settings, normalised and saved', JSON.stringify(blockUi))
+    await shoot(s, '07b-settings-focus.png')
+
+    // Block every app the demo adapter can put in front, so whatever it shows
+    // is a distraction. Outside a focus session nothing is covered; inside one
+    // the shield is up; "Allow 5 minutes" lowers it without ending the session.
+    await s.eval(`
+      const st = (await window.opentime.getBootstrap()).settings
+      await window.opentime.saveSettings({ ...st, blocking: { enabled: true,
+        targets: ['code', 'figma', 'notion', 'slack', 'windows terminal', 'zoom', 'chrome'] } })
+      return 1
+    `)
+    await sleep(1500)
+    const idleShield = await shieldState()
+    !idleShield.visible ? pass('nothing is blocked outside a focus session')
+      : fail('nothing is blocked outside a focus session', JSON.stringify(idleShield))
+
+    await s.eval(`return await window.opentime.startFocus({ label: 'Blocking check', minutes: 25 })`)
+    // The shield never covers OpenTime itself, so step away from it the way a
+    // person would before opening a distraction.
+    await mainEval(`(() => { const { BrowserWindow } = require('electron'); const w = new BrowserWindow({ width: 420, height: 300, title: 'Another app' }); w.loadURL('about:blank'); w.focus(); globalThis.__anotherApp = w })()`)
+    await sleep(2500)
+    const up = await shieldState()
+    up.visible && up.top && up.focusable === false
+      ? pass('the shield covers a blocked app during focus, without taking focus')
+      : fail('the shield covers a blocked app during focus, without taking focus', JSON.stringify(up))
+
+    const shieldTarget = (await cdpTargets()).find((t) => /shield/.test(t.url))
+    let shieldText = null
+    if (shieldTarget) {
+      const sh = new Session(new WebSocket(shieldTarget.webSocketDebuggerUrl))
+      await new Promise((r) => sh.ws.addEventListener('open', r))
+      shieldText = await sh.eval(`return { what: document.getElementById('what').textContent,
+        focus: document.getElementById('focus').textContent, left: document.getElementById('left').textContent }`)
+      await sh.eval(`document.getElementById('snooze').click(); return 1`)
+      sh.ws.close()
+    }
+    shieldText && shieldText.focus === 'Blocking check' && /left$/.test(shieldText.left)
+      ? pass('the shield names the distraction and the session', `${shieldText.what} · ${shieldText.left}`)
+      : fail('the shield names the distraction and the session', JSON.stringify(shieldText))
+
+    await sleep(1500)
+    const snoozed = await shieldState()
+    const stillFocused = await s.eval(`return (await window.opentime.getStatus()).focus?.label || null`)
+    !snoozed.visible && stillFocused === 'Blocking check'
+      ? pass('"Allow 5 minutes" lowers the shield and keeps the session')
+      : fail('"Allow 5 minutes" lowers the shield and keeps the session', JSON.stringify({ snoozed, stillFocused }))
+
+    await s.eval(`return await window.opentime.endFocus()`)
+    await mainEval(`(() => { globalThis.__anotherApp?.destroy(); require('electron').BrowserWindow.getAllWindows().find(w => w.getTitle() === 'OpenTime').focus() })()`)
+    await s.eval(`
+      const st = (await window.opentime.getBootstrap()).settings
+      await window.opentime.saveSettings({ ...st, blocking: { ...st.blocking, enabled: false } })
+      return 1
+    `)
+    await sleep(800)
+    const after = await shieldState()
+    !after.visible ? pass('ending the session lowers any shield') : fail('ending the session lowers any shield', JSON.stringify(after))
+
+    // ── 12c. Updates and feedback are reachable, and say where they stand ──
+    const about = await s.eval(`
+      ;[...document.querySelectorAll('.settings-nav button')].find(b => /updates/i.test(b.textContent)).click()
+      await new Promise(r => setTimeout(r, 300))
+      const pane = [...document.querySelectorAll('.settings-pane > .card')].find(c => !c.hidden)
+      const text = pane.textContent
+      const buttons = [...pane.querySelectorAll('button')].map(b => b.textContent.trim())
+      return { version: /You have OpenTime [0-9]+[.][0-9]+[.][0-9]+/.test(text), buttons,
+               state: (await window.opentime.getBootstrap()).update.state }
+    `)
+    about.version && ['Report a bug', 'Suggest an idea', 'Ask a question'].every((b) => about.buttons.includes(b)) &&
+      about.buttons.some((b) => /Check now|Open downloads page/.test(b))
+      ? pass('Updates & feedback shows the version, an update action and three feedback forms', `update=${about.state}`)
+      : fail('Updates & feedback shows the version, an update action and three feedback forms', JSON.stringify(about))
+    await shoot(s, '07c-settings-updates.png')
 
     // ── 13. Export ─────────────────────────────────────────────────────────
     // The real handler opens a save dialog, which cannot be answered from here,

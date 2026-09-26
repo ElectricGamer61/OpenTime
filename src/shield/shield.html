@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self'; script-src 'self'"
+    />
+    <title>OpenTime focus shield</title>
+    <link rel="stylesheet" href="./shield.css" />
+  </head>
+  <body>
+    <main class="card" role="alertdialog" aria-labelledby="title">
+      <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="17" />
+        <path d="M13 35 35 13" />
+      </svg>
+      <h1 id="title"><span id="what">This</span> is blocked while you focus</h1>
+      <p class="focus">
+        You're focusing on <b id="focus">your focus session</b>
+        <span class="left" id="left"></span>
+      </p>
+      <p class="hint">Close the tab or switch to another app and this goes away.</p>
+      <div class="actions">
+        <button id="snooze" class="ghost">Allow 5 minutes</button>
+        <button id="end" class="ghost">End focus session</button>
+      </div>
+    </main>
+    <script src="./shield.js"></script>
+  </body>
+</html>

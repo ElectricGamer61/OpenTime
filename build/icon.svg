@@ -1,28 +1,41 @@
 <!--
   OpenTime app icon, master source.
 
-  A rounded square mark in the brand violet (the same accent-hi/accent pair
-  the login button gradient uses, see styles.css) carrying a white clock
-  glyph scaled from IconClock in src/renderer/components/Icons.tsx, the same
-  circle-plus-hands drawn for the live tracking card, so the packaged app's
-  identity matches what the UI already draws. Solid fill (not a stroke-only
-  glyph) so it reads at 16px in a tray and stays legible on both light and
-  dark taskbars/desktops.
+  An open ring on a deep night tile: a clock face deliberately left unclosed
+  (the same idea as BrandMark in src/renderer/components/Brand.tsx), swept in
+  a cyan-to-violet-to-pink gradient, ending in a bright dot that marks "now".
+  The tile is dark so the ring carries all the colour; its hairline edge keeps
+  it from dissolving into a dark taskbar.
+
+  build/tray.svg is the same ring without the tile, for the system tray.
 
   Regenerate every packaged raster (build/icon.ico, build/icon.icns, the
-  runtime tray/window PNGs) from this file with npm run icons. Do not hand
+  runtime tray/window PNGs) from these files with `npm run icons`. Do not hand
   edit the generated files.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#8a63ff" />
-      <stop offset="1" stop-color="#5b2fe0" />
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#211a3a" />
+      <stop offset="1" stop-color="#0b0a12" />
     </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.45" r="0.62">
+      <stop offset="0" stop-color="#7c5cff" stop-opacity="0.42" />
+      <stop offset="1" stop-color="#7c5cff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="ring" x1="0.15" y1="0.9" x2="0.85" y2="0.1">
+      <stop offset="0" stop-color="#22d3ee" />
+      <stop offset="0.5" stop-color="#7c5cff" />
+      <stop offset="1" stop-color="#f472b6" />
+    </linearGradient>
+    <filter id="dotglow" x="-1" y="-1" width="3" height="3">
+      <feGaussianBlur stdDeviation="24" />
+    </filter>
   </defs>
-  <rect x="32" y="32" width="960" height="960" rx="215" fill="url(#bg)" />
-  <g fill="none" stroke="#ffffff" stroke-width="46" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="512" cy="512" r="317" />
-    <path d="M512 334.9 L512 512 L623.9 577.3" />
-  </g>
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#tile)" />
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#glow)" />
+  <rect x="33.5" y="33.5" width="957" height="957" rx="222.5" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="3" />
+  <path d="M512 206 A306 306 0 1 0 777 359" fill="none" stroke="url(#ring)" stroke-width="104" stroke-linecap="round" />
+  <circle cx="777" cy="359" r="50" fill="#ffffff" filter="url(#dotglow)" opacity="0.85" />
+  <circle cx="777" cy="359" r="50" fill="#ffffff" />
 </svg>
