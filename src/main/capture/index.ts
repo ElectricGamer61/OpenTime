@@ -63,7 +63,12 @@ export class NativeCapture implements Capture {
         url = ''
       }
     }
-    return { app, title: win.title || '', url, execPath }
+    const p = win.position
+    const bounds =
+      p && p.width > 0 && p.height > 0
+        ? { x: p.x, y: p.y, width: p.width, height: p.height }
+        : undefined
+    return { app, title: win.title || '', url, execPath, bounds }
   }
 
   dispose(): void {}
@@ -86,6 +91,7 @@ interface XWinModule {
     title?: string
     url?: string
     info?: { name?: string; path?: string }
+    position?: { x: number; y: number; width: number; height: number }
   } | null
 }
 

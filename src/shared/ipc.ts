@@ -44,9 +44,52 @@ export const CHANNELS = {
   startFocus: 'opentime:startFocus',
   endFocus: 'opentime:endFocus',
   extendFocus: 'opentime:extendFocus',
+  checkForUpdates: 'opentime:checkForUpdates',
+  installUpdate: 'opentime:installUpdate',
+  openFeedback: 'opentime:openFeedback',
   statusEvent: 'opentime:status',
   dataEvent: 'opentime:data-changed',
+  updateEvent: 'opentime:update',
 } as const
+
+/** The focus shield's own, much smaller, contract. See `src/main/blocker.ts`. */
+export const SHIELD_CHANNELS = {
+  getView: 'opentime-shield:getView',
+  view: 'opentime-shield:view',
+  action: 'opentime-shield:action',
+} as const
+
+export type ShieldAction = 'snooze' | 'end'
+
+/** What the shield shows. */
+export interface ShieldView {
+  /** "YouTube", "Steam". */
+  label: string
+  target: string
+  focusLabel: string
+  /** Epoch ms the focus session is planned to end, for the countdown. */
+  endsAt: number | null
+}
+
+/** Where the updater is. `unsupported` covers dev builds and non-installer runs. */
+export interface UpdateState {
+  state:
+    | 'idle'
+    | 'checking'
+    | 'none'
+    | 'available'
+    | 'downloading'
+    | 'installing'
+    | 'error'
+    | 'unsupported'
+  /** The newer version, once one is known. */
+  version?: string
+  /** Download progress, 0-100. */
+  percent?: number
+  message?: string
+}
+
+export type FeedbackKind = 'bug' | 'idea' | 'question'
 
 export interface DayPayload {
   dayKey: string
@@ -91,6 +134,7 @@ export interface Bootstrap {
   firstRun: boolean
   /** Day keys holding seeded demo history, so the UI can offer to clear them. */
   demoDays: string[]
+  update: UpdateState
 }
 
 export interface RecategorizeRequest {
@@ -217,13 +261,21 @@ export interface OpenTimeApi {
   revealDataFolder(): Promise<void>
   clearDemoData(): Promise<ExportResult>
   reloadCapture(): Promise<CaptureHealth>
-  completeOnboarding(): Promise<Settings>
+  /** Save the choices made during first run and never show it again. */
+  completeOnboarding(settings: Settings): Promise<Settings>
   startFocus(input: FocusStartInput): Promise<FocusStartResult>
   endFocus(): Promise<FocusEndResult>
   /** Push the planned end out by `minutes`. Never shortens a session. */
   extendFocus(minutes: number): Promise<FocusStartResult>
+  /** Ask GitHub for a newer release now, whatever the automatic setting. */
+  checkForUpdates(): Promise<UpdateState>
+  /** Download the newer release, then restart into it. Data is untouched. */
+  installUpdate(): Promise<UpdateState>
+  /** Open the feedback form on GitHub in the browser. */
+  openFeedback(kind: FeedbackKind): Promise<void>
   onStatus(handler: (status: TrackerStatus) => void): () => void
   onDataChanged(handler: () => void): () => void
+  onUpdate(handler: (state: UpdateState) => void): () => void
 }
 
 declare global {

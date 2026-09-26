@@ -2,7 +2,7 @@ import type { ComponentType } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { BrandMark, TitleWordmark } from './components/Brand'
+import { BrandMark } from './components/Brand'
 import { Empty } from './components/Empty'
 import { FocusMode } from './components/Focus'
 import {
@@ -14,8 +14,10 @@ import {
   IconDashboard,
   IconFocus,
   IconFolder,
-  IconFolderOpen,
+  IconInfo,
   IconPause,
+  IconPencil,
+  IconRefresh,
   IconSettings,
   IconTarget,
   IconWeek,
@@ -24,6 +26,7 @@ import { MusicPlayerControl } from './components/MusicPlayer'
 import { Onboarding } from './components/Onboarding'
 import { focusProgress } from '../core/focus'
 import type { RangeKind } from '../core/range'
+import type { FeedbackKind } from '../shared/ipc'
 import { clock, duration } from './lib/format'
 import { useMusicPlayer } from './lib/useMusicPlayer'
 import { usePomodoro } from './lib/usePomodoro'
@@ -115,12 +118,15 @@ export function App() {
       className={`app${collapsed ? ' rail-collapsed' : ''}${app.status?.focus || pomodoro.run ? ' focus-running' : ''}`}
     >
       {app.firstRun ? <Onboarding app={app} /> : null}
-      <Titlebar app={app} onSettings={() => setTab('settings')} />
+      <Titlebar app={app} />
 
       <div className="shell">
         <nav className="rail" aria-label="Main">
           <div className="rail-top">
-            <Workspace app={app} />
+            <div className="rail-brand">
+              <BrandMark size={22} />
+              <span className="nav-label">OpenTime</span>
+            </div>
             <button
               className="icon-btn rail-collapse"
               onClick={() => setCollapsed((v) => !v)}
@@ -282,23 +288,27 @@ function FocusButton({
   )
 }
 
-const WORKSPACE_MENU_WIDTH = 264
-/**
- * Kept off the window edge so the card never looks clipped. Matches the rail's
- * own padding, so at any ordinary width the card lines up with its trigger and
- * the clamp only bites on a window too narrow to hold it.
- */
-const WORKSPACE_MENU_MARGIN = 8
+const MENU_WIDTH = 248
+/** Kept off the window edge so the card never looks clipped. */
+const MENU_MARGIN = 8
+
+const FEEDBACK: Array<{
+  kind: FeedbackKind
+  label: string
+  hint: string
+  Icon: ComponentType<{ size?: number }>
+}> = [
+  { kind: 'bug', label: 'Report a bug', hint: 'Something broke or looks wrong', Icon: IconInfo },
+  { kind: 'idea', label: 'Suggest an idea', hint: 'A feature or an improvement', Icon: IconPencil },
+  { kind: 'question', label: 'Ask a question', hint: 'Anything else', Icon: IconRefresh },
+]
 
 /**
- * The workspace switcher.
- *
- * There is exactly one workspace and there always will be — the store is a
- * folder on this machine, and accounts are on the "not built on purpose" list.
- * So rather than a fake switcher, the chevron opens what a switcher would be
- * hiding: where the data actually is.
+ * Feedback, one click from anywhere. Each choice opens a short form on GitHub
+ * in the browser; the bug form arrives with the app version and OS filled in.
+ * Nothing is sent from the app itself.
  */
-function Workspace({ app }: { app: OpenTimeState }) {
+function FeedbackMenu({ app }: { app: OpenTimeState }) {
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
   const menu = useRef<HTMLDivElement>(null)
@@ -314,12 +324,13 @@ function Workspace({ app }: { app: OpenTimeState }) {
     const place = () => {
       const button = wrap.current?.getBoundingClientRect()
       if (!button) return
-      const width = menu.current?.offsetWidth ?? WORKSPACE_MENU_WIDTH
-      const height = menu.current?.offsetHeight ?? 160
-      const edge = WORKSPACE_MENU_MARGIN
+      const width = menu.current?.offsetWidth ?? MENU_WIDTH
       setPos({
-        top: Math.min(button.bottom + 6, Math.max(edge, window.innerHeight - height - edge)),
-        left: Math.max(edge, Math.min(button.left, window.innerWidth - width - edge)),
+        top: button.bottom + 6,
+        left: Math.max(
+          MENU_MARGIN,
+          Math.min(button.right - width, window.innerWidth - width - MENU_MARGIN)
+        ),
       })
     }
     place()
@@ -345,59 +356,46 @@ function Workspace({ app }: { app: OpenTimeState }) {
   }, [open])
 
   return (
-    <div className="workspace-wrap" ref={wrap}>
+    <div className="menu-wrap" ref={wrap}>
       <button
-        className={`workspace${open ? ' open' : ''}`}
+        className={`titlebar-link${open ? ' open' : ''}`}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        title="Where this workspace lives"
+        aria-haspopup="menu"
       >
-        <span className="workspace-avatar">
-          <BrandMark size={15} />
-        </span>
-        <span className="workspace-name">Personal</span>
-        <IconChevronDown className="workspace-caret" />
+        <span>Feedback</span>
+        <IconChevronDown size={13} />
       </button>
 
-      {/*
-       * Portalled to the body, like every other overlay in the app. The rail is
-       * `overflow: hidden` — it has to be, so the collapse animation does not
-       * spill — and the card is wider than the rail, so rendered in place it was
-       * sliced off mid-sentence at the rail's right edge. Fixed positioning is
-       * viewport-relative only outside the view's transform; see EntryPopover.
-       */}
+      {/* Portalled to the body like every other overlay: fixed positioning
+          is only viewport-relative outside the view's transform. */}
       {open
         ? createPortal(
             <div
-              className="workspace-menu"
+              className="menu-card"
               ref={menu}
-              role="dialog"
-              aria-label="Workspace"
-              style={{
-                width: WORKSPACE_MENU_WIDTH,
-                top: pos?.top ?? -9999,
-                left: pos?.left ?? -9999,
-              }}
+              role="menu"
+              aria-label="Feedback"
+              style={{ width: MENU_WIDTH, top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
             >
-              <div className="workspace-menu-head">
-                This workspace is a folder on this machine.
-              </div>
-              <div className="workspace-path" title={app.dataDirectory}>
-                {app.dataDirectory}
-              </div>
-              <button
-                className="workspace-action"
-                onClick={() => {
-                  void app.revealDataFolder()
-                  setOpen(false)
-                }}
-              >
-                <IconFolderOpen size={15} />
-                Open data folder
-              </button>
-              <div className="workspace-menu-foot">
-                OpenTime v{app.appVersion} · {app.platform}
-              </div>
+              <div className="menu-head">Opens a short form on GitHub.</div>
+              {FEEDBACK.map(({ kind, label, hint, Icon }) => (
+                <button
+                  key={kind}
+                  role="menuitem"
+                  className="menu-item"
+                  onClick={() => {
+                    void app.openFeedback(kind)
+                    setOpen(false)
+                  }}
+                >
+                  <Icon size={15} />
+                  <span>
+                    <b>{label}</b>
+                    <small>{hint}</small>
+                  </span>
+                </button>
+              ))}
             </div>,
             document.body
           )
@@ -407,29 +405,58 @@ function Workspace({ app }: { app: OpenTimeState }) {
 }
 
 /**
- * The window's own title bar: a drag region carrying the wordmark, with live
- * tracking state and a way into Settings on the right. On macOS the traffic
- * lights are inset into the left of it, which is why the left slot is padded
- * rather than empty.
+ * The window's own title bar: a drag region with live tracking state, a way
+ * to leave feedback, and - only when there is one - the update. On macOS the
+ * traffic lights are inset into the left of it, which is why the left slot is
+ * padded rather than empty.
  */
-function Titlebar({ app, onSettings }: { app?: OpenTimeState; onSettings?(): void }) {
+function Titlebar({ app }: { app?: OpenTimeState }) {
   return (
     <header className="titlebar">
       <div className="titlebar-left" />
-      <TitleWordmark />
+      <div />
       <div className="titlebar-right">
         {app ? (
           <>
+            <UpdateChip app={app} />
             <TrackingChip app={app} />
-            <button className="titlebar-link" onClick={onSettings} title="Settings">
-              <IconSettings size={15} />
-              <span>Settings</span>
-            </button>
+            <FeedbackMenu app={app} />
           </>
         ) : null}
       </div>
     </header>
   )
+}
+
+/**
+ * A newer version, announced where it is seen but can be ignored at no cost.
+ * One click downloads it and restarts into it; the data folder is never part
+ * of an update.
+ */
+function UpdateChip({ app }: { app: OpenTimeState }) {
+  const { state, version, percent, message } = app.update
+  if (state === 'available' || (state === 'error' && version)) {
+    return (
+      <button
+        className="update-chip"
+        onClick={() => void app.installUpdate()}
+        title={
+          state === 'error'
+            ? message
+            : `Download OpenTime ${version} and restart into it. Your data is kept.`
+        }
+      >
+        {state === 'error' ? 'Update failed, retry' : `Update to ${version}`}
+      </button>
+    )
+  }
+  if (state === 'downloading') {
+    return <span className="update-chip busy">Downloading update {percent ?? 0}%</span>
+  }
+  if (state === 'installing') {
+    return <span className="update-chip busy">Restarting to update…</span>
+  }
+  return null
 }
 
 /** Tracking state in the title bar — always visible, whatever view is open. */

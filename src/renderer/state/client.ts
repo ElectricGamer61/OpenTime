@@ -40,6 +40,7 @@ import type {
   Settings,
   TrackerStatus,
 } from '../../core/types'
+import { version as packageVersion } from '../../../package.json'
 import type {
   Bootstrap,
   CalendarResult,
@@ -50,6 +51,7 @@ import type {
   OpenTimeApi,
   RecategorizeRequest,
   SessionEdit,
+  UpdateState,
 } from '../../shared/ipc'
 
 const PREVIEW_CAPTURE: CaptureHealth = {
@@ -198,13 +200,16 @@ function createBrowserFallback(): OpenTimeApi {
         today: payload(k),
         weekKeys: lastNDayKeys(7, k),
         historyKeys: Object.keys(state.sessionsByDay).sort(),
-        appVersion: '0.2.0',
+        appVersion: packageVersion,
         platform: 'browser',
         dataDirectory: '(in-memory preview)',
         capture: PREVIEW_CAPTURE,
         captureNotice: PREVIEW_CAPTURE.notice,
-        firstRun: false,
+        // `?onboarding` opens the first-run flow, so it can be previewed and
+        // screenshotted like every other screen.
+        firstRun: !state.settings.onboardedAt && hasQuery('onboarding'),
         demoDays: demoKeys,
+        update: PREVIEW_UPDATE,
       }
     },
     async getDay(k) {
@@ -296,7 +301,9 @@ function createBrowserFallback(): OpenTimeApi {
     async reloadCapture() {
       return PREVIEW_CAPTURE
     },
-    async completeOnboarding() {
+    async completeOnboarding(settings: Settings) {
+      state.settings = { ...state.settings, ...settings, onboardedAt: Date.now() }
+      notify()
       return state.settings
     },
     async startFocus(input) {
@@ -361,11 +368,29 @@ function createBrowserFallback(): OpenTimeApi {
         clearInterval(timer)
       }
     },
+    async checkForUpdates() {
+      return PREVIEW_UPDATE
+    },
+    async installUpdate() {
+      return PREVIEW_UPDATE
+    },
+    async openFeedback() {
+      /* no browser to hand off to from a preview */
+    },
     onDataChanged(handler) {
       listeners.add(handler)
       return () => listeners.delete(handler)
     },
+    onUpdate() {
+      return () => {}
+    },
   }
+}
+
+const PREVIEW_UPDATE: UpdateState = { state: 'unsupported' }
+
+function hasQuery(name: string): boolean {
+  return typeof location !== 'undefined' && new URLSearchParams(location.search).has(name)
 }
 
 let cached: OpenTimeApi | null = null

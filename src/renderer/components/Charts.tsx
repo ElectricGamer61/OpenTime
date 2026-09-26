@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react'
 
 import type { Bucket, DaySummary } from '../../core/aggregate'
 import type { Project } from '../../core/types'
-import { duration, longDate, percent, productivityColor, weekdayShort } from '../lib/format'
+import { duration, EMPTY_VALUE, longDate, percent, productivityColor, weekdayShort } from '../lib/format'
 import { dayStartTs } from '../../core/day'
 import { Empty } from './Empty'
 
@@ -197,7 +197,7 @@ export const FocusRing = memo(function FocusRing({ summary }: { summary: DaySumm
           )}
         </g>
         <text x="50%" y="48%" textAnchor="middle" className="ring-center">
-          {summary.focusScore}
+          {summary.totalSeconds > 0 ? summary.focusScore : EMPTY_VALUE}
         </text>
         <text x="50%" y="62%" textAnchor="middle" className="ring-caption">
           Focus score

@@ -1,0 +1,16 @@
+<!--
+  OpenTime tray icon, master source: build/icon.svg's ring and "now" dot with
+  no tile, drawn heavier so it still reads at 16px beside native tray icons on
+  both light and dark taskbars. Regenerate with `npm run icons`.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="ring" x1="0.15" y1="0.9" x2="0.85" y2="0.1">
+      <stop offset="0" stop-color="#22d3ee" />
+      <stop offset="0.5" stop-color="#7c5cff" />
+      <stop offset="1" stop-color="#f472b6" />
+    </linearGradient>
+  </defs>
+  <path d="M512 120 A392 392 0 1 0 851.5 316" fill="none" stroke="url(#ring)" stroke-width="170" stroke-linecap="round" />
+  <circle cx="851.5" cy="316" r="92" fill="#ffffff" stroke="#7c5cff" stroke-width="28" />
+</svg>

@@ -1,0 +1,15 @@
+name: Suggest an idea
+description: A feature, an improvement, or something that would make OpenTime fit you better.
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like OpenTime to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help you?
+      description: The situation you're in when you wish it existed.

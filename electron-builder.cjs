@@ -37,7 +37,8 @@ module.exports = {
   win: {
     target: ['nsis'],
     icon: 'build/icon.ico',
-    artifactName: 'OpenTime-${version}-setup.${ext}',
+    // What people see in their Downloads folder, so it says what it is.
+    artifactName: 'OpenTime-Setup-${version}.${ext}',
     signAndEditExecutable: canEditExecutable,
     // Bundles the VC++ runtime DLLs @miniben90/x-win's native binary links
     // against — see AGENTS.md's x-win/VCRUNTIME140.dll note. Populated by
@@ -51,12 +52,28 @@ module.exports = {
       },
     ],
   },
+  // One click: double-click the installer and OpenTime is installed for this
+  // user (no admin prompt), with Start menu and desktop shortcuts, and opens.
   nsis: {
-    oneClick: false,
+    oneClick: true,
     perMachine: false,
-    allowToChangeInstallationDirectory: true,
+    runAfterFinish: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
+    // The data folder lives in the user's app-data directory, apart from the
+    // program. Installing, updating and uninstalling never touch it.
+    deleteAppDataOnUninstall: false,
     installerIcon: 'build/icon.ico',
     uninstallerIcon: 'build/icon.ico',
+  },
+  // Where the in-app updater looks. electron-builder embeds this as
+  // resources/app-update.yml and writes latest.yml next to the installer;
+  // both must be attached to the GitHub release (the release workflow does).
+  publish: {
+    provider: 'github',
+    owner: 'ElectricGamer61',
+    repo: 'OpenTime',
+    releaseType: 'release',
   },
   mac: {
     target: ['dmg'],

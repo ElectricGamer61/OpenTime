@@ -1,7 +1,9 @@
 /** Factory defaults for a fresh OpenTime install, and settings validation. */
 
+import { DEFAULT_BLOCK_TARGETS, normalizeBlockTargets } from './blocking'
 import { DEFAULT_DAY_START_HOUR } from './day'
 import type {
+  BlockingSettings,
   CalendarSettings,
   CategoryRule,
   Goal,
@@ -32,6 +34,11 @@ export const DEFAULT_SETTINGS: Settings = {
   launchAtLogin: false,
   notificationsEnabled: true,
   theme: 'system',
+  checkForUpdates: false,
+  blocking: {
+    enabled: false,
+    targets: DEFAULT_BLOCK_TARGETS,
+  },
   calendar: {
     connected: false,
     clientId: '',
@@ -174,6 +181,16 @@ export function sanitizeSettings(input: Partial<Settings> | null | undefined): S
   const captureMode =
     raw.captureMode === 'native' || raw.captureMode === 'demo' ? raw.captureMode : 'auto'
 
+  // A config written before blocking existed gets the starter list, switched
+  // off; one that exists keeps exactly what the user left in it, even empty.
+  const blockingRaw = raw.blocking as Partial<BlockingSettings> | undefined
+  const blocking: BlockingSettings = {
+    enabled: !!blockingRaw?.enabled,
+    targets: Array.isArray(blockingRaw?.targets)
+      ? normalizeBlockTargets(blockingRaw.targets)
+      : [...DEFAULT_BLOCK_TARGETS],
+  }
+
   return {
     pollIntervalSeconds: clampInt(
       raw.pollIntervalSeconds,
@@ -200,6 +217,8 @@ export function sanitizeSettings(input: Partial<Settings> | null | undefined): S
     onboardedAt: Number.isFinite(Number(raw.onboardedAt)) && Number(raw.onboardedAt) > 0
       ? Number(raw.onboardedAt)
       : undefined,
+    checkForUpdates: !!raw.checkForUpdates,
+    blocking,
     calendar,
   }
 }

@@ -1,36 +1,138 @@
 # OpenTime
 
-A lean, local-first automatic time tracker for Windows and macOS.
+**See where your time actually goes, automatically and privately.**
 
-OpenTime runs quietly in the tray, notices which application and window you are
-actually working in, and turns that into a timeline, a category breakdown, and a
-focus score — with your calendar overlaid beside it. No timers to start. No
-screenshots. No account, no server, no subscription: everything stays in a folder
-on your machine that you can open, export, back up or delete.
-
-Two global shortcuts work from anywhere, window or not: `Ctrl/Cmd+Alt+O` shows
-or hides it, `Ctrl/Cmd+Alt+P` toggles pause — the tray menu has both too, plus
-timed pauses (15/30/60 minutes, or until you resume).
-
-When you want to declare rather than observe, start a **focus session**: name the
-work, pick a length, optionally play an ambient bed, and it lands on the timeline
-as one block when you stop.
+OpenTime is a free, open-source automatic time tracker for Windows. It quietly
+notices which app or website you're using and turns your day into a timeline,
+a focus score and simple reports. Think of it as a privacy-first Rize: no
+account, no cloud, no AI, no screenshots, no subscription. Everything stays on
+your computer.
 
 ![The day calendar](docs/screenshots/calendar.png)
+
+---
+
+## Download and install
+
+1. **Download** `OpenTime-Setup-<version>.exe` from the
+   [latest release](https://github.com/ElectricGamer61/OpenTime/releases/latest)
+   (under **Assets**).
+2. **Double-click it.** It installs for your account in a few seconds and opens
+   by itself. No admin rights needed.
+   - If Windows shows **"Windows protected your PC"**, click **More info**, then
+     **Run anyway**. This appears because OpenTime is not code-signed yet (that
+     costs money every year); it is not a virus warning.
+3. **Answer four quick screens** (about 30 seconds): what OpenTime does, where
+   things are, and a few choices like light or dark mode. That's it. It starts
+   tracking right away, with an empty slate.
+
+   ![First run](docs/screenshots/onboarding.png)
+
+Windows 10 and 11 are supported. A macOS build is not available to download
+yet; see [Running it from source](#running-it-from-source).
+
+## Using it
+
+- **Just use your computer.** Within a few minutes your day starts filling in on
+  the **Calendar**. The **Dashboard** shows today at a glance.
+- **Something labelled wrong?** Click the block and rename, split, merge,
+  retime or delete it. Choose "remember this" and it's fixed for the future.
+- **Want to focus?** Click **Start focus**, name the task, and pick a timer or
+  Pomodoro. Turn on **distraction blocking** and sites like YouTube get covered
+  until the session ends.
+- **Closing the window doesn't stop tracking.** OpenTime keeps running in the
+  system tray. `Ctrl+Alt+O` opens it from anywhere, `Ctrl+Alt+P` pauses it.
+
+## Updating
+
+Your data is never touched by an update.
+
+- If you said yes to **"Tell me about updates"** during setup, an
+  **Update to x.y.z** button appears at the top of the window when a new
+  version is out. One click downloads it and restarts into it.
+- Or check yourself: **Settings, Updates & feedback, Check now**.
+- Or download the newest installer from the
+  [releases page](https://github.com/ElectricGamer61/OpenTime/releases/latest)
+  and run it over the old one.
+
+## Feedback
+
+Click **Feedback** at the top right of the app, or open an issue here:
+[report a bug](https://github.com/ElectricGamer61/OpenTime/issues/new?template=bug_report.yml),
+[suggest an idea](https://github.com/ElectricGamer61/OpenTime/issues/new?template=feature_request.yml),
+or [ask a question](https://github.com/ElectricGamer61/OpenTime/issues/new?template=question.yml).
+
+## Where your data lives, and uninstalling
+
+Everything is plain files in `%APPDATA%\OpenTime\opentime`, one small JSON file
+per day. **Settings, Your data** can open the folder, export CSV, make a full
+backup, or restore one.
+
+To uninstall, use **Windows Settings, Apps, OpenTime, Uninstall**. Your data
+folder is kept, so reinstalling picks up where you left off. Delete the folder
+too if you want it gone.
+
+---
+
+## Everything OpenTime does
+
+**Tracking**
+- Automatic app and website tracking: nothing to start or stop.
+- Idle detection: time away from the keyboard is marked *Away*, never counted as work.
+- Automatic categories and projects, with rules you teach it by correcting blocks.
+- Private apps and private subjects that are never recorded at all.
+- Pause from the tray or with `Ctrl+Alt+P`, for 15, 30 or 60 minutes or until you resume.
+- Starts at sign-in, quietly in the tray (optional).
+
+**Seeing your day**
+- Calendar: your day as a timeline, by category, project or app. Day, week, month and year.
+- Dashboard: time tracked, focus time, distraction, focus score, what stands out.
+- Activity: every session, unfolded.
+- Reports: any week, month, quarter, year or custom range.
+- Insights: your best focus hours, meeting load, top distraction, compared with your own average.
+
+**Fixing mistakes**
+- Rename, split, merge, retime or delete any block, add time you spent away
+  from the computer, or turn an *Away* block into work.
+
+**Focus**
+- Focus sessions: name the task, set a length, extend or stop anytime.
+- Pomodoro: 25/5, 50/10 or your own split.
+- Distraction blocking during focus sessions (optional): a list of sites and
+  apps to cover, with "Allow 5 minutes" when you really need one.
+- Break reminders after a long stretch without a break (optional).
+- Ambient sounds and a small music player (lo-fi, whale song, alpha waves, classical).
+
+**Goals**
+- Daily or weekly targets, like "at least 4 hours of focus" or "at most 45
+  minutes of distraction". No streaks, no guilt.
+
+**Your data**
+- Export sessions or daily summaries to CSV, full backup and restore, optional
+  automatic clean-up of old days.
+- Google Calendar overlay (optional, with your own free Google API key).
+
+**Everything else**
+- Light, dark, or match your system.
+- One-click updates, and feedback straight from the app.
+
+**What it deliberately does not do:** screenshots, keystroke logging, AI
+summaries, accounts, cloud sync, team dashboards, or streaks. The reasons are in
+[`docs/feature-inventory.md`](docs/feature-inventory.md).
 
 ---
 
 ## Contents
 
 - [What it does](#what-it-does)
-- [Running it](#running-it)
+- [Running it from source](#running-it-from-source)
 - [Architecture](#architecture)
 - [Performance notes](#performance-notes)
 - [Storage](#storage)
 - [Your data](#your-data)
 - [Google Calendar](#google-calendar)
 - [Privacy](#privacy)
-- [Packaging for Windows and macOS](#packaging-for-windows-and-macos)
+- [Packaging and releasing](#packaging-and-releasing)
 - [Testing](#testing)
 - [What is not built yet](#what-is-not-built-yet)
 - [Relationship to the older Norte tracker](#relationship-to-the-older-norte-tracker)
@@ -111,6 +213,15 @@ no audio files in the bundle and nothing is streamed.
 
 ![Starting a focus session](docs/screenshots/focus.png)
 
+**Distraction blocking.** Optional, and only ever during a focus session. Put
+sites (`youtube.com`, which covers its subdomains) or apps (`steam`) on a list,
+and while a session runs, a blocked one in front gets covered by a calm
+full-screen reminder of what you are focusing on and how long is left. It never
+takes keyboard focus, so closing the tab or switching apps still works, and it
+lifts the moment something else is in front. "Allow 5 minutes" lets one through;
+"End focus session" ends it. OpenTime never closes or kills anything: it cannot
+lose your work, and it needs no admin rights. See `src/core/blocking.ts`.
+
 **Ambient music player.** A small, always-available background player, not a
 timer and not a second "start something" button — pick a track (lo-fi, whale
 song, alpha waves, or an original classical-style motif), play or pause it,
@@ -134,7 +245,7 @@ out in week columns.
 **Light and dark.** Both themes ship and both are looked at — `npx electron
 scripts/screenshot.cjs <dir> --theme=both` captures each view in each, and
 refuses to write a capture whose resolved `color-scheme` is not the one asked
-for. Settings → Appearance follows the OS or pins one.
+for. Settings, General, Appearance follows the OS or pins one; first run asks.
 
 **Export and backup.** Sessions CSV, a daily-summary CSV, and a full JSON backup
 that restores everything. The data is one plain-JSON file per day in a folder you
@@ -144,7 +255,7 @@ can open, copy or delete.
 
 ---
 
-## Running it
+## Running it from source
 
 Requires Node 20+.
 
@@ -412,32 +523,60 @@ the demo history includes plausible meetings so the overlay is visible.
   window whose title or host contains one of your keywords is never recorded, in
   *any* application. Applications are the wrong unit for confidentiality; the
   subject is the right one.
-- **No telemetry, no analytics, no network calls** other than to Google's own
-  OAuth and Calendar endpoints, and only after you connect an account.
+- **No telemetry, no analytics.** The only network calls are to Google's own
+  OAuth and Calendar endpoints, only after you connect an account, and a check
+  with GitHub for a newer version, only if you turned update checks on. It
+  sends nothing about you.
 - **OpenTime never tracks itself.**
 
 ![Projects and rules](docs/screenshots/projects.png)
 
 ---
 
-## Packaging for Windows and macOS
+## Packaging and releasing
 
 `electron-builder` is configured in `electron-builder.cjs` (a file rather than
 package.json's `build` key so `signAndEditExecutable` can vary by host — see
 below; electron-builder only discovers a config file named exactly
 `electron-builder.<ext>`, not `electron-builder.config.<ext>`). Targets: NSIS
-on Windows (per-user install, changeable directory), dmg on macOS.
+on Windows (one-click, per-user, no admin prompt), dmg on macOS.
 
 ```bash
 npm run package:win
 npm run package:mac
 ```
 
+### Releasing a version
+
+1. `npm version 0.4.0 --no-git-tag-version`, commit, and merge to `main`.
+2. Tag it: `git tag v0.4.0 && git push origin v0.4.0`.
+
+`.github/workflows/windows-package.yml` builds and verifies the installer on a
+real Windows runner, checks that the tag matches `package.json`, and publishes a
+GitHub Release named `OpenTime 0.4.0` with `OpenTime-Setup-0.4.0.exe`, its
+`.blockmap`, and `latest.yml`. Installed copies with update checks on see it
+within hours; everyone else sees it on **Check now**.
+
+The updater (`src/main/updater.ts`, `electron-updater`) only ever downloads
+after a click, verifies the download against the sha512 in `latest.yml`, flushes
+every pending write, then runs the installer silently and relaunches. The data
+folder is never part of an install. Only an installed Windows build updates
+itself; dev runs and unsigned macOS builds point at the releases page.
+
+To try the whole flow without publishing anything, serve a folder holding a
+newer build's installer, blockmap and `latest.yml`, and start an installed copy
+with `OPENTIME_UPDATE_FEED=http://127.0.0.1:<port>/`.
+
+The repository has to be public for people (and the updater) to download
+releases.
+
 ### App icon
 
-`build/icon.svg` is the single hand-authored source — a rounded-square mark in
-the brand violet carrying the same clock glyph `IconClock` draws in the
-renderer. `npm run icons` renders every packaged raster from it: `icon.ico`
+`build/icon.svg` is the hand-authored source: an open ring (a clock face left
+unclosed) swept cyan to violet to pink on a deep night tile, ending in a dot
+that marks "now". The in-app mark (`BrandMark`) is the same drawing.
+`build/tray.svg` is the ring alone, drawn heavier for the tray. `npm run icons`
+renders every packaged raster from them: `icon.ico`
 (Windows — installer, uninstaller, both shortcuts, and the exe itself),
 `icon.icns` (macOS), `icon.png` (the runtime window/taskbar icon), and
 `tray/{16,20,24,32,40,48}.png` (one exact-pixel representation per tray scale
@@ -446,7 +585,7 @@ bitmap reads visibly soft on HiDPI). `src/main/icon.ts` resolves these at
 runtime in both dev and packaged builds; `tests/icons.test.ts` regenerates
 every raster and byte-compares it against what's committed, so an edited SVG
 that was never re-run through `npm run icons` fails CI instead of shipping a
-stale icon. Edit `build/icon.svg`, run `npm run icons`, commit the
+stale icon. Edit either SVG, run `npm run icons`, commit the
 regenerated files alongside it.
 
 Notes for a real release:
@@ -464,7 +603,7 @@ Notes for a real release:
   verify the `.node` binary is present in the packaged app.
 - **Building the NSIS installer on Linux needs Wine.** `npm run package:win`
   produces a real `release/win-unpacked/OpenTime.exe` on any host, but wrapping
-  it into `OpenTime-<version>-setup.exe` invokes `nsis-resources`, which
+  it into `OpenTime-Setup-<version>.exe` invokes `nsis-resources`, which
   electron-builder can only run through Wine when the host OS is not Windows.
   `electron-builder.cjs` sets `win.signAndEditExecutable` to `true` only when
   actually running on Windows (`process.platform === 'win32'`) — real hardware
@@ -549,10 +688,9 @@ Honest list of what a production release still needs. The full account, includin
 what was left out on purpose and what should be reworked, is in
 [`docs/feature-inventory.md`](docs/feature-inventory.md).
 
-- **Auto-update.** No update feed. The natural choice is `electron-updater`
-  against public GitHub Releases; shipping a feed only the author can publish to
-  would be worse than shipping none.
-- **Codesigning and notarisation.** Required before macOS distribution.
+- **Code signing.** Unsigned Windows installers trigger a SmartScreen prompt
+  on first run ("More info", "Run anyway"). Signing, and notarisation, is also
+  required before macOS distribution and macOS self-updates.
 - **Calendar write-back.** Read-only today; the scope is already selectable.
 - **SQLite backend.** No longer needed for durability or memory — the sharded,
   journalled store fixed both. It would buy indexed cross-day queries, worth doing

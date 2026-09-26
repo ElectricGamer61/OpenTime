@@ -1,5 +1,6 @@
 /**
- * Regenerate every packaged app-icon raster from build/icon.svg.
+ * Regenerate every packaged app-icon raster from build/icon.svg (the app
+ * icon) and build/tray.svg (the tile-less tray variant).
  *
  * Run with `npm run icons` after editing the master SVG. Nothing here is
  * loaded at app runtime except the plain PNGs under build/ (the main process
@@ -17,6 +18,7 @@ import png2icons from 'png2icons'
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const svgPath = path.join(root, 'build', 'icon.svg')
+const traySvgPath = path.join(root, 'build', 'tray.svg')
 const buildDir = path.join(root, 'build')
 
 // Electron's Tray expects an exact-pixel image per scale factor rather than
@@ -35,6 +37,7 @@ async function render(svg, size) {
 async function main() {
   await mkdir(buildDir, { recursive: true })
   const svg = await readFile(svgPath)
+  const traySvg = await readFile(traySvgPath)
 
   const master = await render(svg, 1024)
 
@@ -52,7 +55,7 @@ async function main() {
   const trayDir = path.join(buildDir, 'tray')
   await mkdir(trayDir, { recursive: true })
   for (const size of TRAY_SIZES) {
-    const png = await render(svg, size)
+    const png = await render(traySvg, size)
     await writeFile(path.join(trayDir, `${size}.png`), png)
   }
 

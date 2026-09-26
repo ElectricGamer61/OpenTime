@@ -1,7 +1,7 @@
 {
   "name": "opentime",
   "productName": "OpenTime",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OpenTime — a lean, local-first automatic time tracker for Windows and macOS.",
   "private": true,
   "license": "Apache-2.0",
@@ -30,6 +30,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
+    "electron-updater": "^6.8.9",
     "esbuild": "^0.24.0",
     "png2icons": "^2.0.1",
     "react": "^18.3.1",

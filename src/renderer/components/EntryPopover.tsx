@@ -125,7 +125,7 @@ export function EntryPopover({
     >
       <div className="popover-head">
         <span className="popover-dot" style={{ background: color }} />
-        <span className="popover-workspace">Personal</span>
+        <span className="popover-kind">{entryKindLabel(entry)}</span>
         <Ring share={share} color={color} />
         <div className="popover-actions">
           {editable ? (
@@ -260,4 +260,12 @@ function Ring({ share, color }: { share: number; color: string }) {
       <b>{percent(share)}</b>
     </span>
   )
+}
+
+/** What sort of block this is, for the popover's header. */
+function entryKindLabel(entry: DayEntry): string {
+  if (entry.kind === 'away') return 'Away'
+  if (entry.kind === 'event') return 'Calendar event'
+  if (entry.focus) return 'Focus session'
+  return 'Tracked time'
 }

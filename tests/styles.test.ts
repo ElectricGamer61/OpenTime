@@ -80,7 +80,7 @@ describe('design tokens', () => {
    * the clamp; this pins the ones that have already been caught doing it.
    */
   it('clamps the single-column grids that have overflowed before', () => {
-    for (const selector of ['.calendar-main', '.summary', '.donut-legend', '.legend']) {
+    for (const selector of ['.app', '.calendar-main', '.summary', '.donut-legend', '.legend']) {
       const block = CSS.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`))
       expect(block?.[0], `${selector} rule`).toBeTruthy()
       expect(block?.[0], `${selector} needs a minmax(0, …) column`).toMatch(
