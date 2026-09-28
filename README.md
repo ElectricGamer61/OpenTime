@@ -463,6 +463,35 @@ a lie about what is on disk. It is off by default because silently destroying
 someone's history to satisfy a default is not something a local-first app gets to
 do.
 
+**Ask an assistant.** OpenTime ships an MCP server, so an AI assistant can answer
+questions about your time ("how long did I work on Rookbot this week?", "where
+did yesterday go?"). It is a plain Node program that reads the same files the app
+writes, never writes anything, and never touches the network:
+
+```bash
+npm run build:node        # builds dist/mcp/server.js
+```
+
+Point any MCP client at it. The block below is the same for Rookbot
+(`rookbot-home/connectors.json`), Claude Desktop, Claude Code and Cursor:
+
+```json
+{ "mcpServers": { "opentime": { "command": "node", "args": ["<path to>/Opentime/dist/mcp/server.js"] } } }
+```
+
+| Tool | Answers |
+|---|---|
+| `time_summary` | where the time in a range went: totals, productivity, categories, apps, projects |
+| `time_on` | how long on one thing (a project, app, site, document), per day and on which windows |
+| `sessions` | the sessions themselves, newest first, optionally filtered |
+| `tracking_status` | whether the record is current, which days exist, and the projects with their keywords |
+
+Every tool takes a `range` in words: `today`, `yesterday`, `this week`, `last 14 days`,
+`this month`, a date, or `2026-09-01..2026-09-25`. The session in progress is only
+written when it ends, so the last few minutes are not in the answer yet.
+`OPENTIME_DATA_DIR` points the server at another data folder. The answers are
+built in `src/core/ask.ts` from the same `summarizeDay` the dashboard uses.
+
 ---
 
 ## Google Calendar

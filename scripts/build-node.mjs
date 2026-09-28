@@ -30,6 +30,9 @@ const targets = [
   { entryPoints: ['src/main/main.ts'], outfile: 'dist/main/main.js' },
   { entryPoints: ['src/preload/preload.ts'], outfile: 'dist/preload/preload.js' },
   { entryPoints: ['src/preload/shield.ts'], outfile: 'dist/preload/shield.js' },
+  // The MCP server: a plain Node program (no Electron) that answers questions
+  // about tracked time over stdio. See src/mcp/server.ts.
+  { entryPoints: ['src/mcp/server.ts'], outfile: 'dist/mcp/server.js' },
   // The focus shield is its own tiny page (see src/main/blocker.ts): a browser
   // bundle, not a Node one, and small enough to need no framework.
   {
