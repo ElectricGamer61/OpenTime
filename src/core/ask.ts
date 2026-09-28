@@ -92,8 +92,18 @@ function clock(ts: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/**
+ * A day as a person reads it: "Fri 2026-09-25". A model handed a bare date
+ * works the weekday out for itself, and gets it wrong.
+ */
+export function dayLabel(key: string): string {
+  return `${WEEKDAY[parseYmdLocal(key).getDay()]} ${key}`
+}
+
 function describeRange(range: DayRange): string {
-  return range.fromKey === range.toKey ? range.fromKey : `${range.fromKey} to ${range.toKey}`
+  return range.fromKey === range.toKey ? dayLabel(range.fromKey) : `${dayLabel(range.fromKey)} to ${dayLabel(range.toKey)}`
 }
 
 function top<T>(entries: Iterable<[T, number]>, n: number): Array<[T, number]> {
@@ -182,7 +192,7 @@ export function summarize({ range, days, projects }: AskInput): string {
       `First activity ${clock(s.firstActivityAt!)}, last ${clock(s.lastActivityAt!)}. Longest focus stretch ${formatDuration(s.longestFocusSeconds)}; focus score ${s.focusScore}/100.`
     )
   } else if (active.length > 1) {
-    lines.push(`Per day: ${active.map((s) => `${s.dayKey} ${formatDuration(s.totalSeconds)}`).join(', ')}.`)
+    lines.push(`Per day: ${active.map((s) => `${dayLabel(s.dayKey)} ${formatDuration(s.totalSeconds)}`).join(', ')}.`)
   }
   return lines.join('\n')
 }
@@ -213,11 +223,11 @@ export function timeOn(query: string, input: AskInput): string {
       .join(', ')}.`,
   ]
   if (perDay.size > 1) {
-    lines.push(`Per day: ${[...perDay].map(([k, v]) => `${k} ${formatDuration(v)}`).join(', ')}.`)
+    lines.push(`Per day: ${[...perDay].map(([k, v]) => `${dayLabel(k)} ${formatDuration(v)}`).join(', ')}.`)
   }
   lines.push(
     perDay.size === 1
-      ? `On ${[...perDay.keys()][0]}, between ${clock(first)} and ${clock(last)}.`
+      ? `On ${dayLabel([...perDay.keys()][0])}, between ${clock(first)} and ${clock(last)}.`
       : `First ${formatYmdLocal(new Date(first))} ${clock(first)}, last ${formatYmdLocal(new Date(last))} ${clock(last)}.`
   )
   lines.push(

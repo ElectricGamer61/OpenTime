@@ -155,15 +155,15 @@ describe('the MCP server', () => {
   it('answers "how long on X", including what is only in the journal, once', async () => {
     const today = await call('time_on', { query: 'c0-f0', range: 'today' })
     // 60m from the day file plus 30m journalled; the seq-5 duplicate is skipped.
-    expect(today.text).toContain('"c0-f0" 2026-09-25: 1h 30m across 2 sessions')
+    expect(today.text).toContain('"c0-f0" Fri 2026-09-25: 1h 30m across 2 sessions')
     const week = await call('time_on', { query: 'rookbot', range: 'this week' })
     expect(week.text).toContain('3h across 3 sessions')
-    expect(week.text).toContain('2026-09-24 1h 30m')
+    expect(week.text).toContain('Thu 2026-09-24 1h 30m')
   })
 
   it('summarises a day the way the dashboard does', async () => {
     const { text } = await call('time_summary', { range: 'today' })
-    expect(text).toContain('Tracked 2026-09-25: 1h 50m.')
+    expect(text).toContain('Tracked Fri 2026-09-25: 1h 50m.')
     expect(text).toContain('distracting 20m')
     expect(text).toContain('By project: Rookbot 1h')
   })
