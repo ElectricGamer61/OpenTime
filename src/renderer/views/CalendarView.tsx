@@ -349,8 +349,8 @@ export function CalendarView({
           <div className="notice">
             <IconInfo />
             <div>
-              <strong>Showing example activity.</strong> {app.captureNotice} Settings, Your data
-              can remove it.
+              <strong>Showing example activity.</strong> {app.captureNotice} You can clear it in
+              Settings under Your data.
             </div>
           </div>
         ) : app.capture?.notice ? (
@@ -472,6 +472,7 @@ export function CalendarView({
               dayKey={day.dayKey}
               dayStartHour={settings.dayStartHour}
               projects={app.projects}
+              rules={app.rules}
               onApply={(request) => {
                 void app.recategorize(request)
                 closeAll()
@@ -532,7 +533,7 @@ function WeekStrip({
               <span className="week-day-name">{weekdayShort(date.getTime())}</span>
               <span className="week-day-num">{date.getDate()}</span>
             </div>
-            <div className="week-day-total">{summary.totalSeconds ? duration(summary.totalSeconds) : '—'}</div>
+            <div className="week-day-total">{summary.totalSeconds ? duration(summary.totalSeconds) : '-'}</div>
             <div className="week-day-bar" aria-hidden="true">
               {total
                 ? spend.map((s) =>

@@ -469,7 +469,7 @@ function TrackingChip({ app }: { app: OpenTimeState }) {
  * activity. Anything unrecognised is shown as-is rather than guessed at.
  */
 function captureKind(adapter: string | undefined): string {
-  if (!adapter) return '—'
+  if (!adapter) return '-'
   const kind = adapter.split(' (')[0]
   if (kind === 'demo') return 'Demo'
   if (kind === 'x-win') return 'Native'

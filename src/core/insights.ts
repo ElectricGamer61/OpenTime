@@ -112,7 +112,7 @@ export function buildInsights(input: InsightInput): Insight[] {
       id: 'peak-window',
       tone: 'good',
       title: `Sharpest between ${hourLabel(peak.startHour)} and ${hourLabel(peak.startHour + 3)}`,
-      detail: `${hours(peak.seconds)} of focused work landed in that window — the strongest three hours of your day. Worth defending from meetings.`,
+      detail: `${hours(peak.seconds)} of focused work landed in that window, the strongest three hours of your day. Worth keeping free of meetings.`,
       weight: 60,
     })
   }
@@ -163,7 +163,7 @@ export function buildInsights(input: InsightInput): Insight[] {
       id: 'top-distraction',
       tone: 'warn',
       title: `${hours(top.seconds)} in ${top.label}`,
-      detail: `That is ${percent(top.share)} of everything tracked today. If it is genuinely a break, retag it as one — the score should reflect what you meant.`,
+      detail: `That is ${percent(top.share)} of everything tracked today. If some of it was work, move it to a project so your score is right.`,
       weight: 70,
     })
   }

@@ -37,7 +37,15 @@ import path from 'node:path'
 
 import { dayKey } from '../../core/day'
 import { defaultConfig, migrateConfig, sanitizeSettings, STATE_VERSION } from '../../core/defaults'
-import { DAY_KEY_RE, foldRecord, parseJournal, recordKeys, sortSessions, type JournalRecord } from '../../core/journal'
+import {
+  DAY_KEY_RE,
+  foldRecord,
+  parseJournal,
+  recordKeys,
+  sortSessions,
+  type JournalRecord,
+  type SessionPatch,
+} from '../../core/journal'
 import type {
   CalendarEvent,
   CategoryRule,
@@ -421,7 +429,7 @@ export class FileStorage implements Storage {
     await this.write({ seq: this.nextSeq(), op: 'putEvents', key, events })
   }
 
-  async updateSession(key: string, id: string, patch: Partial<Session>): Promise<Session | null> {
+  async updateSession(key: string, id: string, patch: SessionPatch): Promise<Session | null> {
     const { record } = await this.load(key)
     if (!record.sessions.some((s) => s.id === id)) return null
     await this.write({ seq: this.nextSeq(), op: 'updateSession', key, id, patch })

@@ -85,8 +85,8 @@ export function DataSettings({
         {days
           ? `${days} tracked day${days === 1 ? '' : 's'} stored in `
           : 'Nothing recorded yet. Your history will be stored in '}
-        <code className="mono">{app.dataDirectory}</code>. One file per day, plain JSON — readable
-        without OpenTime, and yours to copy, sync or delete.
+        <code className="mono">{app.dataDirectory}</code>. One file per day, in plain JSON you can
+        read without OpenTime, and yours to copy, sync or delete.
       </p>
 
       <div className="setting-row">
@@ -165,7 +165,7 @@ export function DataSettings({
         <div>
           <div className="setting-name">Keep history for</div>
           <div className="setting-desc">
-            Older days are deleted from disk, not hidden. Off by default — OpenTime does not throw
+            Older days are deleted from disk, not hidden. Off by default: OpenTime never throws
             away your history unless you ask it to.
           </div>
         </div>

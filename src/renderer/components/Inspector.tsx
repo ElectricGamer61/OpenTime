@@ -1,7 +1,8 @@
 import { memo, useEffect, useState } from 'react'
 
+import { explainMatch, resolveCategory } from '../../core/categorize'
 import { timeWithinDay } from '../../core/day'
-import type { IdleBlock, Productivity, Project, Session } from '../../core/types'
+import type { CategoryRule, IdleBlock, Productivity, Project, Session } from '../../core/types'
 import type { EditResult, RecategorizeRequest, SessionEdit } from '../../shared/ipc'
 import { duration, timeOfDay } from '../lib/format'
 import { Empty } from './Empty'
@@ -25,6 +26,8 @@ export interface InspectorProps {
   /** Rollover hour, so an entered time lands on the right tracking day. */
   dayStartHour: number
   projects: Project[]
+  /** The user's rules, so the panel can say which one filed a block. */
+  rules: CategoryRule[]
   onApply(request: RecategorizeRequest): void
   onEdit(edit: SessionEdit): Promise<EditResult>
 }
@@ -47,6 +50,7 @@ export const Inspector = memo(function Inspector({
   dayKey,
   dayStartHour,
   projects,
+  rules,
   onApply,
   onEdit,
 }: InspectorProps) {
@@ -127,7 +131,7 @@ export const Inspector = memo(function Inspector({
           {absorbed > 30 ? (
             <>
               {' '}
-              The gaps between them — <b>{duration(absorbed)}</b> — are absorbed into the merged
+              The gaps between them (<b>{duration(absorbed)}</b>) are absorbed into the merged
               block.
             </>
           ) : null}
@@ -173,7 +177,7 @@ export const Inspector = memo(function Inspector({
 
         <div className="hint">
           Time away from the keyboard is not automatically time not working. If this was a meeting,
-          a whiteboard or a call, claim it — the away block is replaced, so nothing is counted twice.
+          a whiteboard or a call, claim it. The away block is replaced, so nothing is counted twice.
         </div>
 
         <div className="field">
@@ -237,7 +241,7 @@ export const Inspector = memo(function Inspector({
           <Empty
             glyph={<IconEmptyPointer />}
             title="Nothing selected"
-            hint="Pick a block on the timeline to retag, retime, split or delete it. Ctrl-click a second block to merge them — or record time OpenTime could not see."
+            hint="Pick a block on the timeline to retag, retime, split or delete it. Ctrl-click a second block to merge them, or record time OpenTime could not see."
           />
           <div className="row" style={{ justifyContent: 'center' }}>
             <button className="btn ghost" onClick={() => setMode('manual')}>
@@ -251,8 +255,8 @@ export const Inspector = memo(function Inspector({
       <div className="inspector">
         <div className="inspector-title">Add time manually</div>
         <div className="hint">
-          For work that happened away from this machine — a workshop, a phone call, a whiteboard
-          session. It is stored as a manual entry and labelled as one in exports.
+          For work that happened away from this computer, like a workshop, a phone call or a
+          whiteboard session. It is stored as a manual entry and labelled as one in exports.
         </div>
 
         <div className="row">
@@ -329,6 +333,9 @@ export const Inspector = memo(function Inspector({
     productivity !== session.productivity ||
     note !== (session.note || '')
   const target = remember === 'app' ? session.app : session.url || session.app
+  const why = whyFiled(session, rules, projects)
+  const destination = projects.find((p) => p.name === category)
+  const teaches = !!destination && destination.id !== session.projectId
 
   return (
     /* Keyed on the session so switching blocks replays the panel's fade-in —
@@ -347,6 +354,7 @@ export const Inspector = memo(function Inspector({
           {session.source === 'manual' ? ' · added by hand' : ''}
           {session.source === 'demo' ? ' · demo data' : ''}
         </div>
+        {why ? <div className="inspector-why">{why}</div> : null}
       </div>
 
       {mode === 'split' ? (
@@ -386,7 +394,7 @@ export const Inspector = memo(function Inspector({
       ) : mode === 'retime' ? (
         <>
           <div className="hint">
-            Move the boundaries when the capture caught the wrong moment — a meeting that started
+            Move the boundaries when the capture caught the wrong moment, like a meeting that started
             before you opened the laptop, or a block that ran on after you stopped.
           </div>
           <div className="row">
@@ -439,7 +447,7 @@ export const Inspector = memo(function Inspector({
       ) : (
         <>
           <div className="field">
-            <label htmlFor="insp-category">Category</label>
+            <label htmlFor="insp-category">Project</label>
             <input
               id="insp-category"
               list="opentime-categories"
@@ -451,6 +459,12 @@ export const Inspector = memo(function Inspector({
                 <option key={p.id} value={p.name} />
               ))}
             </datalist>
+            {teaches ? (
+              <div className="hint">
+                OpenTime learns from this block’s title, so windows like it land in “{category}” on
+                their own.
+              </div>
+            ) : null}
           </div>
 
           <div className="field">
@@ -554,3 +568,18 @@ export const Inspector = memo(function Inspector({
     </div>
   )
 })
+
+/**
+ * Why a block is filed where it is, in one sentence. The evidence (which
+ * word, which site) is worked out again from the block, because only the kind
+ * of match is stored; if that no longer agrees, the kind alone is said.
+ */
+function whyFiled(session: Session, rules: CategoryRule[], projects: Project[]): string | null {
+  if (session.edited) return 'You filed this block yourself.'
+  if (!session.match) return null
+  const again = resolveCategory(session, rules, projects)
+  if (again.source === session.match && again.category === session.category) {
+    return explainMatch(again.source, again.evidence)
+  }
+  return explainMatch(session.match)
+}

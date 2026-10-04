@@ -99,7 +99,7 @@ export function ReportsView({
         <div>
           <h1 className="page-title">Reports</h1>
           <p className="page-sub">
-            {rangeLabel(range)} — {duration(totals.totalSeconds)} tracked over {activeDays} active
+            {rangeLabel(range)} · {duration(totals.totalSeconds)} tracked over {activeDays} active
             day{activeDays === 1 ? '' : 's'}
           </p>
         </div>
@@ -184,7 +184,7 @@ export function ReportsView({
           <Empty
             glyph={<IconEmptyTimeline />}
             title="Nothing tracked in this range"
-            hint="Pick another period, or widen the range — days with no activity are simply absent, not hidden."
+            hint="Pick another period, or a longer one."
           />
         </div>
       ) : (

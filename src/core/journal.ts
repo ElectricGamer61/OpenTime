@@ -10,13 +10,20 @@
 
 import type { CalendarEvent, DayRecord, IdleBlock, Session } from './types'
 
+/**
+ * A change to one session. `null` removes a field: `undefined` cannot, because
+ * JSON drops it, so a journalled "clear the project" would come back on replay
+ * as "leave the project alone".
+ */
+export type SessionPatch = { [K in keyof Session]?: Session[K] | null }
+
 export type JournalRecord =
   | { seq: number; op: 'appendSessions'; days: Record<string, Session[]> }
   | { seq: number; op: 'putSessions'; key: string; sessions: Session[] }
   | { seq: number; op: 'appendIdle'; key: string; block: IdleBlock }
   | { seq: number; op: 'putIdle'; key: string; blocks: IdleBlock[] }
   | { seq: number; op: 'putEvents'; key: string; events: CalendarEvent[] }
-  | { seq: number; op: 'updateSession'; key: string; id: string; patch: Partial<Session> }
+  | { seq: number; op: 'updateSession'; key: string; id: string; patch: SessionPatch }
 
 export const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -58,7 +65,11 @@ export function foldRecord(day: DayRecord, key: string, record: JournalRecord): 
     case 'updateSession': {
       const index = day.sessions.findIndex((s) => s.id === record.id)
       if (index < 0) break
-      day.sessions[index] = { ...day.sessions[index], ...record.patch, id: day.sessions[index].id }
+      const next: Record<string, unknown> = { ...day.sessions[index], ...record.patch, id: day.sessions[index].id }
+      for (const [field, value] of Object.entries(record.patch)) {
+        if (value === null) delete next[field]
+      }
+      day.sessions[index] = next as unknown as Session
       break
     }
   }

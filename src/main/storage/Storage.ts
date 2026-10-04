@@ -26,6 +26,7 @@ import type {
   Settings,
   StoreConfig,
 } from '../../core/types'
+import type { SessionPatch } from '../../core/journal'
 
 export interface Storage {
   /** Load configuration and recover any un-checkpointed writes. */
@@ -65,7 +66,8 @@ export interface Storage {
   getDays(dayKeys: string[]): Promise<DayRecord[]>
 
   /** Recategorise a single stored session (used by the review panel). */
-  updateSession(dayKey: string, id: string, patch: Partial<Session>): Promise<Session | null>
+  /** Apply a patch; a `null` field is removed. */
+  updateSession(dayKey: string, id: string, patch: SessionPatch): Promise<Session | null>
 
   /** Every day key that has records, ascending. */
   listDayKeys(): string[]

@@ -16,9 +16,10 @@
 
 import { spawnSync } from 'node:child_process'
 
-import { BROWSER_RE, urlHost } from '../../core/categorize'
+import { BROWSER_RE, readAddress } from '../../core/categorize'
 import { DemoSampleStream } from '../../core/demo'
 import type { WindowSample } from '../../core/types'
+import { WindowsAddressReader, type AddressReader } from './addressBar'
 
 export interface Capture {
   /** Stable identifier shown in Settings, e.g. "x-win (native)". */
@@ -35,10 +36,12 @@ export class NativeCapture implements Capture {
   readonly demo = false
   private xwin: XWinModule
   private selfExecPath: string
+  private addresses: AddressReader | null
 
-  constructor(xwin: XWinModule, selfExecPath: string) {
+  constructor(xwin: XWinModule, selfExecPath: string, addresses: AddressReader | null = null) {
     this.xwin = xwin
     this.selfExecPath = selfExecPath.toLowerCase()
+    this.addresses = addresses
   }
 
   sample(): WindowSample | null {
@@ -54,13 +57,24 @@ export class NativeCapture implements Capture {
     if (execPath && execPath.toLowerCase() === this.selfExecPath) return null
 
     let url = ''
+    let address: string | undefined
+    let urlPending: boolean | undefined
     if (BROWSER_RE.test(app)) {
-      // Reading a URL forces the browser accessibility tree on, so it is
-      // browsers only — and some windows still refuse UIA.
+      // Reading an address turns the browser's accessibility tree on, so it
+      // is browsers only. x-win reports one on some platforms; where it does
+      // not (Chrome and Edge on Windows), the address bar is read directly.
+      let read: ReturnType<typeof readAddress> = null
       try {
-        url = urlHost(win.url)
+        read = readAddress(win.url)
       } catch {
-        url = ''
+        read = null
+      }
+      const fallback = read ? null : this.addresses?.read(win.title)
+      if (fallback === 'pending') urlPending = true
+      else if (fallback) read = fallback
+      if (read) {
+        url = read.host
+        address = read.address
       }
     }
     const p = win.position
@@ -68,10 +82,12 @@ export class NativeCapture implements Capture {
       p && p.width > 0 && p.height > 0
         ? { x: p.x, y: p.y, width: p.width, height: p.height }
         : undefined
-    return { app, title: win.title || '', url, execPath, bounds }
+    return { app, title: win.title || '', url, address, urlPending, execPath, bounds }
   }
 
-  dispose(): void {}
+  dispose(): void {
+    this.addresses?.dispose()
+  }
 }
 
 export class DemoCapture implements Capture {
@@ -141,7 +157,7 @@ export function classifyProbeFailure(result: {
     return {
       ok: false,
       error:
-        'the native window-capture module is not installed for this platform — reinstall dependencies, or install the app package built for this OS',
+        'the native window-capture module is not installed for this platform. Reinstall dependencies, or install the app package built for this OS',
       remedy: 'module-missing',
     }
   }
@@ -154,7 +170,7 @@ export function classifyProbeFailure(result: {
     return {
       ok: false,
       error:
-        'the native window-capture module failed to load — a required system component (the Microsoft Visual C++ Redistributable) appears to be missing. Reinstalling OpenTime usually fixes this.',
+        'the native window-capture module failed to load: a required system component (the Microsoft Visual C++ Redistributable) appears to be missing. Reinstalling OpenTime usually fixes this.',
       remedy: 'module-missing',
     }
   }
@@ -233,7 +249,8 @@ export function createCapture(
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const mod = require('@miniben90/x-win') as XWinModule
-      const capture = new NativeCapture(mod, selfExecPath)
+      const addresses = process.platform === 'win32' ? new WindowsAddressReader() : null
+      const capture = new NativeCapture(mod, selfExecPath, addresses)
       // Native capture works, but on macOS it may be capturing app names only.
       // That is a degraded state worth naming rather than a fallback.
       if (process.platform === 'darwin' && opts.macAccessibilityTrusted === false) {

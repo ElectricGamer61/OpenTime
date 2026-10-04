@@ -19,6 +19,7 @@ import { z } from 'zod'
 
 import { listSessions, resolveRange, status, summarize, timeOn } from '../core/ask'
 import { rangeKeys } from '../core/range'
+import pkg from '../../package.json'
 import { defaultDataDirectory, ReadOnlyStore } from './store'
 
 const RANGE = z
@@ -29,7 +30,7 @@ const RANGE = z
 const READ = { readOnlyHint: true, openWorldHint: false } as const
 
 export function createServer(store: ReadOnlyStore, now: () => number = Date.now): McpServer {
-  const server = new McpServer({ name: 'opentime', version: '0.3.1' })
+  const server = new McpServer({ name: 'opentime', version: pkg.version })
 
   const input = async (spec: string) => {
     const range = resolveRange(spec, now(), await store.dayStartHour())

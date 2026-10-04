@@ -21,6 +21,19 @@ export interface WindowSample {
    * contents are ever persisted. Empty for non-browser apps.
    */
   url?: string
+  /**
+   * Host and path of the page, lower-cased, with the query and fragment already
+   * cut off ("github.com/acme/opentime/pull/12"). Live-only, like `bounds`:
+   * it lets a project match on the repository or document a page belongs to,
+   * and is never copied into a session or written to disk. Only `url` is.
+   */
+  address?: string
+  /**
+   * True when this is a browser window whose address is still being read. The
+   * session builder treats it as "nothing new yet" rather than as a window
+   * with no address, so a page is not briefly filed under the wrong project.
+   */
+  urlPending?: boolean
   /** Absolute path of the focused executable, when the platform exposes it. */
   execPath?: string
   /**
@@ -64,7 +77,28 @@ export interface Session {
   edited?: boolean
   /** Set when this stretch fell inside a focus session the user ran. */
   focus?: FocusMark
+  /** Which signal filed it under its category; absent on rows older than 0.4. */
+  match?: MatchSource
 }
+
+/**
+ * What decided a session's category, so the app can say why in plain words.
+ *
+ *  - `keyword-rule` / `app-rule`: a rule the user taught ("Matching text", "Whole app")
+ *  - `name`: the window mentions the project's name
+ *  - `keyword`: one of the project's keywords
+ *  - `learned`: words the project learned from blocks the user filed under it
+ *  - `context`: a window with nothing to go on, kept with the work around it
+ *  - `default`: nothing matched
+ */
+export type MatchSource =
+  | 'keyword-rule'
+  | 'app-rule'
+  | 'name'
+  | 'keyword'
+  | 'learned'
+  | 'context'
+  | 'default'
 
 /**
  * The stamp a finished focus session leaves on the time it covered.
@@ -111,7 +145,7 @@ export interface IdleBlock {
 /** "Remember this app as X" and learned keyword rules. */
 export interface CategoryRule {
   id: string
-  /** 'app' matches the executable name exactly; 'keyword' is a substring of "app title url". */
+  /** 'app' matches the app name exactly; 'keyword' is a word or site found in the app, title or address. */
   kind: 'app' | 'keyword'
   /** Lower-cased match value. */
   match: string
@@ -125,9 +159,24 @@ export interface Project {
   id: string
   name: string
   color: string
-  /** Lower-cased substrings matched against "app title url". */
+  /**
+   * Lower-cased words or sites. A word matches a whole word in the app name,
+   * window title or address; a site ("youtube.com", "github.com/acme") matches
+   * the address.
+   */
   keywords: string[]
   archived?: boolean
+  /**
+   * How time filed here counts. Absent means productive, which is right for
+   * nearly every project; a "Breaks" project is the exception.
+   */
+  productivity?: Productivity
+  /**
+   * Words from the windows of blocks the user filed under this project, with
+   * how often each was seen. Kept on this machine, and the project page can
+   * clear it. See `learnWords` in categorize.ts.
+   */
+  learned?: Record<string, number>
 }
 
 /** Calendar event overlaid on the timeline. */

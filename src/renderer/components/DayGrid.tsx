@@ -25,6 +25,8 @@ const MAX_LANES = 5
 const ROOMY_PX = 62
 const COMPACT_PX = 38
 const TINY_PX = 17
+/** The shortest a block is drawn, so even a two-minute entry keeps its label. */
+const MIN_BLOCK_PX = 18
 
 export interface DayGridProps {
   dayKey: string
@@ -117,6 +119,25 @@ export const DayGrid = memo(function DayGrid({
     return out
   }, [window])
 
+  // Where each block sits. Clock position first; but a block shorter than
+  // its minimum height would overlap the next one in its lane and clip both
+  // labels, so each is nudged just below the one above it, and keeps its end
+  // where the clock puts it whenever there is room to.
+  const geometry = useMemo(() => {
+    const out = new Map<string, { top: number; height: number }>()
+    const floor = new Map<number, number>()
+    const ordered = [...layout.entries].sort((a, b) => a.start - b.start)
+    for (const entry of ordered) {
+      const naturalTop = ((entry.start - window.start) / 3600_000) * HOUR_PX
+      const naturalBottom = ((entry.end - window.start) / 3600_000) * HOUR_PX - 2
+      const top = Math.max(naturalTop, floor.get(entry.lane) ?? -Infinity)
+      const height = Math.max(MIN_BLOCK_PX, naturalBottom - top)
+      out.set(entry.id, { top, height })
+      floor.set(entry.lane, top + height + 2)
+    }
+    return out
+  }, [layout, window])
+
   // A minute of resolution is all the "you are here" line can show, so it
   // re-renders once a minute rather than once a second.
   const now = useNow(60_000)
@@ -160,11 +181,9 @@ export const DayGrid = memo(function DayGrid({
         ) : null}
 
         {layout.entries.map((entry) => {
-          const top = ((entry.start - window.start) / 3600_000) * HOUR_PX
-          const span = ((entry.end - entry.start) / 3600_000) * HOUR_PX
-          // A pixel of air between neighbours so two touching blocks read as
-          // two stretches rather than one slab.
-          const height = Math.max(18, span - 2)
+          // Two pixels of air between neighbours (see `geometry`) so two
+          // touching blocks read as two stretches rather than one slab.
+          const { top, height } = geometry.get(entry.id) ?? { top: 0, height: MIN_BLOCK_PX }
           const color = colorOf(entry)
           const selected = selectedId === entry.id
           const picked = pickedIds?.has(entry.id) ?? false
@@ -201,10 +220,10 @@ export const DayGrid = memo(function DayGrid({
                 onSelect(entry, e.currentTarget.getBoundingClientRect(), e.ctrlKey || e.metaKey)
               }
               aria-pressed={picked || undefined}
-              title={`${entry.focus ? 'Focus session — ' : ''}${entry.label} · ${timeOfDay(
+              title={`${entry.focus ? 'Focus session: ' : ''}${entry.label} · ${timeOfDay(
                 entry.start
               )}–${timeOfDay(entry.end)} · ${duration(entry.seconds)}${
-                entry.kind === 'session' ? ' — ctrl-click to merge' : ''
+                entry.kind === 'session' ? ' (ctrl-click to merge)' : ''
               }`}
             >
               <i className="entry-edge" aria-hidden="true" />

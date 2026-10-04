@@ -87,7 +87,7 @@ export const FocusSessionsCard = memo(function FocusSessionsCard({
         <Empty
           glyph={<IconFocus size={30} />}
           title="No focus sessions today"
-          hint="Start one to put your own name on a stretch of work. Tracking runs either way — this is the part you declare."
+          hint="Start one to put your own name on a stretch of work. Tracking runs either way."
           action={
             <button className="btn primary small" onClick={onStart}>
               Start focus session

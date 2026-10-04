@@ -494,7 +494,7 @@ function FocusUnrecorded({ reason, onClose }: { reason: string; onClose(): void 
           <p>{reason}</p>
         </div>
         <p className="focus-hint">
-          Your tracked time is untouched — a focus session only puts a name on minutes that were
+          Your tracked time is untouched. A focus session only puts a name on minutes that were
           already being recorded.
         </p>
         <div className="focus-sheet-foot">

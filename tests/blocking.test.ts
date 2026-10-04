@@ -65,6 +65,12 @@ describe('blockedBy', () => {
     expect(blockedBy(chrome('', 'Inbox (3) - Gmail - Google Chrome'), targets)).toBeNull()
   })
 
+  it('does not block a page that only mentions a blocked site', () => {
+    const chat = chrome('', 'Creating your first YouTube introduction video - Claude - Google Chrome')
+    expect(blockedBy(chat, targets)).toBeNull()
+    expect(blockedBy(chrome('', 'Channel content - YouTube Studio - Google Chrome'), targets)).toBeNull()
+  })
+
   it('does not apply the title fallback to apps that are not browsers', () => {
     expect(blockedBy(app('Code', 'youtube-embed.ts - VS Code'), targets)).toBeNull()
   })

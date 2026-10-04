@@ -12,7 +12,7 @@
  * are testable without Electron. `src/main/blocker.ts` drives it.
  */
 
-import { BROWSER_RE } from './categorize'
+import { BROWSER_RE, titleNamesSite } from './categorize'
 import type { WindowSample } from './types'
 
 /** Offered, pre-filled, when someone switches blocking on. Editable. */
@@ -75,9 +75,10 @@ function hasWord(haystack: string, word: string): boolean {
  * A site target matches the browser's host exactly or as a parent domain
  * ("youtube.com" covers "m.youtube.com" but "x.com" does not cover
  * "dropbox.com"). Browsers do not always expose the URL, so a browser window
- * with no host falls back to the site's name appearing as a word in the title
- * - "youtube" in "Lo-fi beats - YouTube" - but only for names long enough not
- * to collide with ordinary words ("x" alone never matches).
+ * with no host falls back to the title naming the site as one of its parts -
+ * "Lo-fi beats - YouTube" - but not merely mentioning it ("my YouTube intro -
+ * Claude" is a chat), and only for names long enough not to collide with
+ * ordinary words ("x" alone never matches).
  *
  * An app/word target matches the app's name, or a whole word in the title.
  */
@@ -95,8 +96,7 @@ export function blockedBy(sample: WindowSample | null, targets: string[]): strin
         continue
       }
       if (!browser) continue
-      const name = target.split('.')[0]
-      if (name.length >= 4 && hasWord(title, name)) return target
+      if (titleNamesSite(title, target)) return target
     } else {
       // Containment catches "discord" in "Discord PTB"; below three letters it
       // would catch nearly everything, so short targets must match exactly.

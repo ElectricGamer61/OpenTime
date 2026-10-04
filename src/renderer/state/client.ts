@@ -57,7 +57,7 @@ import type {
 const PREVIEW_CAPTURE: CaptureHealth = {
   adapter: 'demo (browser preview)',
   demo: true,
-  notice: 'Browser preview — no OS capture available, showing generated demo activity.',
+  notice: 'This is a browser preview, so the activity is generated.',
   remedy: 'unsupported-session',
 }
 
@@ -210,6 +210,12 @@ function createBrowserFallback(): OpenTimeApi {
         firstRun: !state.settings.onboardedAt && hasQuery('onboarding'),
         demoDays: demoKeys,
         update: PREVIEW_UPDATE,
+        // What the desktop app would show, with placeholder paths.
+        assistant: {
+          command: String.raw`C:\Users\you\AppData\Local\Programs\OpenTime\OpenTime.exe`,
+          args: [String.raw`C:\Users\you\AppData\Local\Programs\OpenTime\resources\app.asar\dist\mcp\server.js`],
+          env: { ELECTRON_RUN_AS_NODE: '1' },
+        },
       }
     },
     async getDay(k) {

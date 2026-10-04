@@ -36,7 +36,7 @@ export function shouldSeedDemo(opts: {
   return opts.captureIsDemo && opts.seedDemoWhenUnavailable && opts.storeIsEmpty
 }
 
-/** Small deterministic PRNG (mulberry32) — no dependency, stable across runs. */
+/** Small deterministic PRNG (mulberry32) - no dependency, stable across runs. */
 export function seededRandom(seed: number): () => number {
   let a = seed >>> 0
   return () => {
@@ -67,15 +67,15 @@ interface DemoActivity {
 }
 
 const WORK_ACTIVITIES: DemoActivity[] = [
-  { app: 'Code', titles: ['opentime — tracker.ts', 'opentime — aggregate.ts', 'opentime — App.tsx'], weight: 8, minutes: [12, 55] },
-  { app: 'Windows Terminal', titles: ['pwsh — npm test', 'pwsh — git status'], weight: 4, minutes: [3, 14] },
+  { app: 'Code', titles: ['opentime - tracker.ts', 'opentime - aggregate.ts', 'opentime - App.tsx'], weight: 8, minutes: [12, 55] },
+  { app: 'Windows Terminal', titles: ['pwsh - npm test', 'pwsh - git status'], weight: 4, minutes: [3, 14] },
   { app: 'chrome', titles: ['Pull requests · opentime'], url: 'github.com', weight: 5, minutes: [4, 18] },
   { app: 'chrome', titles: ['MDN Web Docs'], url: 'developer.mozilla.org', weight: 3, minutes: [3, 12] },
-  { app: 'Figma', titles: ['OpenTime — Dashboard v0'], weight: 3, minutes: [10, 40] },
-  { app: 'Notion', titles: ['OpenTime — roadmap', 'Weekly review'], weight: 3, minutes: [6, 22] },
-  { app: 'Slack', titles: ['#opentime', 'DM — design review'], weight: 4, minutes: [3, 12] },
+  { app: 'Figma', titles: ['OpenTime - Dashboard v0'], weight: 3, minutes: [10, 40] },
+  { app: 'Notion', titles: ['OpenTime - roadmap', 'Weekly review'], weight: 3, minutes: [6, 22] },
+  { app: 'Slack', titles: ['#opentime', 'DM - design review'], weight: 4, minutes: [3, 12] },
   { app: 'Zoom', titles: ['Weekly sync'], weight: 2, minutes: [25, 50] },
-  { app: 'chrome', titles: ['Watch Later — YouTube'], url: 'youtube.com', weight: 4, minutes: [4, 22] },
+  { app: 'chrome', titles: ['Watch Later - YouTube'], url: 'youtube.com', weight: 4, minutes: [4, 22] },
   { app: 'chrome', titles: ['r/programming'], url: 'reddit.com', weight: 3, minutes: [3, 18] },
 ]
 
@@ -116,7 +116,7 @@ export function generateDemoDay(
     rules: opts.rules,
     projects: opts.projects,
     // Every synthetic row says so, so demo history is never mistaken for
-    // observed history — in the UI, in an export, or in a support question.
+    // observed history - in the UI, in an export, or in a support question.
     source: 'demo',
     makeId: (() => {
       let n = 0

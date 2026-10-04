@@ -59,22 +59,34 @@ export const DEFAULT_PROJECTS: Project[] = [
   { id: 'p_communication', name: 'Communication', color: '#e0a83e', keywords: ['slack', 'mail', 'gmail', 'outlook', 'teams'] },
   { id: 'p_meetings', name: 'Meetings', color: '#c86bf0', keywords: ['zoom', 'meet.google', 'teams meeting', 'webex'] },
   { id: 'p_research', name: 'Research', color: '#3ecf6e', keywords: ['wikipedia', 'arxiv', 'stackoverflow', 'developer.mozilla'] },
-  { id: 'p_breaks', name: 'Breaks', color: '#f2545b', keywords: ['youtube', 'netflix', 'reddit', 'twitch'] },
+  {
+    id: 'p_breaks',
+    name: 'Breaks',
+    color: '#f2545b',
+    keywords: ['youtube.com', 'netflix.com', 'reddit.com', 'twitch.tv'],
+    productivity: 'distracting',
+  },
 ]
 
 /**
- * Seed rules.
- *
- * Rules outrank projects, which is what makes these necessary: "Breaks" is a
- * legitimate category the user wants to see on the timeline, but naming a
- * category must not by itself make the time count as productive. Without these,
- * every hour of the day would score as focus.
+ * What "Breaks" shipped with before 0.4: bare words, so a chat titled "my
+ * YouTube intro" was a break. Sites match the page instead. A starter list
+ * nobody edited is moved to the sites; one someone changed is theirs.
+ */
+const OLD_BREAKS_KEYWORDS = ['youtube', 'netflix', 'reddit', 'twitch']
+
+/**
+ * The starter rules before 0.4. They existed only to make "Breaks" count as
+ * distraction, which the project now says itself, and their bare words
+ * misfiled anything that mentioned a site. An unedited one is retired.
+ */
+const RETIRED_RULE_IDS = new Set(['r_youtube', 'r_netflix', 'r_reddit', 'r_twitch'])
+
+/**
+ * Seed rules. Slack is filed as Communication like mail, but counted neutral:
+ * a chat app open all day is not an afternoon of work.
  */
 export const DEFAULT_RULES: CategoryRule[] = [
-  { id: 'r_youtube', kind: 'keyword', match: 'youtube', category: 'Breaks', productivity: 'distracting' },
-  { id: 'r_netflix', kind: 'keyword', match: 'netflix', category: 'Breaks', productivity: 'distracting' },
-  { id: 'r_reddit', kind: 'keyword', match: 'reddit', category: 'Breaks', productivity: 'distracting' },
-  { id: 'r_twitch', kind: 'keyword', match: 'twitch', category: 'Breaks', productivity: 'distracting' },
   { id: 'r_slack', kind: 'keyword', match: 'slack', category: 'Communication', productivity: 'neutral' },
 ]
 
@@ -230,8 +242,51 @@ export function migrateConfig(input: Partial<StoreConfig> | null | undefined): S
   return {
     version: STATE_VERSION,
     settings: sanitizeSettings(input.settings),
-    projects: input.projects?.length ? input.projects : base.projects,
-    rules: Array.isArray(input.rules) ? input.rules : base.rules,
+    projects: input.projects?.length ? input.projects.map(sanitizeProject) : base.projects,
+    rules: Array.isArray(input.rules) ? input.rules.filter((r) => !isRetiredRule(r)) : base.rules,
     goals: Array.isArray(input.goals) ? input.goals : base.goals,
   }
+}
+
+const PRODUCTIVITY = new Set(['productive', 'neutral', 'distracting'])
+
+/**
+ * Tidy one stored project: drop a productivity or learned-word map that is not
+ * well formed, and move an unedited pre-0.4 "Breaks" onto sites.
+ */
+export function sanitizeProject(input: Project): Project {
+  const project: Project = { ...input, keywords: Array.isArray(input.keywords) ? input.keywords : [] }
+  if (project.productivity !== undefined && !PRODUCTIVITY.has(project.productivity)) {
+    delete project.productivity
+  }
+  if (project.learned !== undefined) {
+    const learned: Record<string, number> = {}
+    if (project.learned && typeof project.learned === 'object') {
+      for (const [word, count] of Object.entries(project.learned)) {
+        if (Number.isFinite(count) && count > 0) learned[word] = Math.round(count)
+      }
+    }
+    project.learned = learned
+  }
+  if (project.id === 'p_breaks') {
+    const starter = DEFAULT_PROJECTS.find((p) => p.id === 'p_breaks')!
+    if (sameList(project.keywords, OLD_BREAKS_KEYWORDS)) project.keywords = [...starter.keywords]
+    // Before 0.4 a project could not say how it counted, so Breaks was
+    // silently scored as productive. It was always meant as distraction.
+    if (project.productivity === undefined) project.productivity = 'distracting'
+  }
+  return project
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((item, i) => item === b[i])
+}
+
+function isRetiredRule(rule: CategoryRule): boolean {
+  return (
+    RETIRED_RULE_IDS.has(rule.id) &&
+    rule.kind === 'keyword' &&
+    rule.category === 'Breaks' &&
+    OLD_BREAKS_KEYWORDS.includes(rule.match)
+  )
 }

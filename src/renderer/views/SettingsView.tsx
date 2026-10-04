@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { DEFAULT_BLOCK_TARGETS, normalizeBlockTarget } from '../../core/blocking'
 import type { Settings } from '../../core/types'
+import { AssistantSettings } from '../components/AssistantSettings'
 import { DataSettings } from '../components/DataSettings'
 import { IconClose, IconInfo } from '../components/Icons'
 import { Toggle } from '../components/Toggle'
@@ -111,6 +112,7 @@ const SECTIONS = [
   { id: 'tracking', label: 'Tracking' },
   { id: 'privacy', label: 'Privacy' },
   { id: 'data', label: 'Your data' },
+  { id: 'assistant', label: 'Assistant' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'about', label: 'Updates & feedback' },
 ] as const
@@ -402,8 +404,9 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
           <div className="card" hidden={section !== 'privacy'}>
             <h2 className="card-title">Privacy</h2>
             <p className="card-lede">
-              OpenTime never takes screenshots or records keystrokes, and keeps only the site name of a
-              web address, never the full link. Everything stays on this computer.
+              OpenTime never takes screenshots or records keystrokes. It reads a page’s address to
+              match it to a project, but keeps only the site name, never the full link. Everything
+              stays on this computer.
             </p>
 
             <div className="setting-sub">
@@ -436,6 +439,10 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
 
           <div hidden={section !== 'data'}>
             <DataSettings app={app} draft={draft} patch={patch} />
+          </div>
+
+          <div hidden={section !== 'assistant'}>
+            <AssistantSettings connector={app.assistant} />
           </div>
 
           <div className="card" hidden={section !== 'calendar'}>
