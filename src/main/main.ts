@@ -25,6 +25,7 @@ import {
   Tray,
 } from 'electron'
 
+import { learnFromRefile } from '../core/categorize'
 import { dayKey, lastNDayKeys, parseYmdLocal, formatYmdLocal } from '../core/day'
 import { generateDemoDay, shouldSeedDemo } from '../core/demo'
 import { exportFilename, parseBackup } from '../core/export'
@@ -36,10 +37,10 @@ import type {
   CategoryRule,
   Goal,
   Project,
-  Session,
   Settings,
   TrackerStatus,
 } from '../core/types'
+import type { SessionPatch } from '../core/journal'
 import { CHANNELS } from '../shared/ipc'
 import type {
   Bootstrap,
@@ -80,7 +81,6 @@ import { Updater } from './updater'
 const DEV_SERVER_URL = process.env.OPENTIME_DEV_SERVER_URL
 /** Passed by the login item: start tracking in the tray without a window. */
 const HIDDEN_FLAG = '--hidden'
-let windowOpenedBefore = false
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -171,15 +171,8 @@ function createWindow(): void {
     },
   })
 
-  // Paint only when there is something to show — no white flash on launch.
-  // At sign-in the window stays hidden: tracking runs from the tray, and the
-  // tray icon or Ctrl+Alt+O brings the window up.
-  // Only the very first window: one reopened later from the tray must show.
-  const startHidden = !windowOpenedBefore && process.argv.includes(HIDDEN_FLAG) && !!tray
-  windowOpenedBefore = true
-  mainWindow.once('ready-to-show', () => {
-    if (!startHidden) mainWindow?.show()
-  })
+  // Paint only when there is something to show: no white flash on launch.
+  mainWindow.once('ready-to-show', () => mainWindow?.show())
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -259,7 +252,7 @@ function buildTrayMenu(): void {
   const until = status.pausedUntil
     ? ` until ${new Date(status.pausedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     : ''
-  tray.setToolTip(status.paused ? `OpenTime — paused${until}` : 'OpenTime — tracking')
+  tray.setToolTip(status.paused ? `OpenTime: paused${until}` : 'OpenTime: tracking')
 }
 
 function toggleWindow(): void {
@@ -461,7 +454,7 @@ async function connectCalendar(): Promise<CalendarResult> {
     return {
       ok: false,
       message:
-        'Add your own Google OAuth client ID and secret in Settings first. OpenTime ships no credentials — see the README for the two-minute setup.',
+        'Add your own Google OAuth client ID and secret in Settings first. OpenTime ships no credentials. See the README for the two-minute setup.',
     }
   }
 
@@ -757,6 +750,11 @@ function registerIpc(): void {
       firstRun: !settings.onboardedAt,
       demoDays: storage.demoDays(),
       update: updater?.state ?? { state: 'unsupported' },
+      assistant: {
+        command: process.execPath,
+        args: [path.join(app.getAppPath(), 'dist', 'mcp', 'server.js')],
+        env: { ELECTRON_RUN_AS_NODE: '1', OPENTIME_DATA_DIR: storage.dataDirectory },
+      },
     }
   })
 
@@ -823,12 +821,22 @@ function registerIpc(): void {
   ipcMain.handle(
     CHANNELS.recategorize,
     async (_e, req: RecategorizeRequest): Promise<DayPayload> => {
-      const patch: Partial<Session> = { category: req.category, edited: true }
-      if (req.productivity) patch.productivity = req.productivity
-      if (req.note !== undefined) patch.note = req.note || undefined
+      const before = (await storage.getSessions(req.dayKey)).find((s) => s.id === req.sessionId)
       const project = storage.getProjects().find((p) => p.name === req.category)
-      if (project) patch.projectId = project.id
+      // A block moved to a category that is not a project leaves its old
+      // project; `null` is what clears it for good (see SessionPatch).
+      const patch: SessionPatch = { category: req.category, edited: true, projectId: project?.id ?? null }
+      if (req.productivity) patch.productivity = req.productivity
+      if (req.note !== undefined) patch.note = req.note || null
       const updated = await storage.updateSession(req.dayKey, req.sessionId, patch)
+
+      // Moving a block between projects teaches both: the next window like it
+      // lands in the new project on its own.
+      const learned = updated && before ? learnFromRefile(storage.getProjects(), before, project?.id) : null
+      if (learned) {
+        await storage.saveProjects(learned)
+        tracker.reconfigure(storage.getSettings(), learned, storage.getRules())
+      }
 
       if (updated && req.rememberAs) {
         const match =
@@ -1089,7 +1097,7 @@ if (!app.requestSingleInstanceLock()) {
           if (!storage.getSettings().notificationsEnabled) return
           if (!Notification.isSupported()) return
           new Notification({
-            title: 'OpenTime — focus checkpoint',
+            title: 'OpenTime: focus checkpoint',
             body: `${minutes} minutes of unbroken focus. A short break here protects the next block.`,
             silent: true,
           }).show()
@@ -1134,7 +1142,11 @@ if (!app.requestSingleInstanceLock()) {
       console.error('[main] tray unavailable:', err)
     }
 
-    createWindow()
+    // At sign-in OpenTime starts in the tray with no window at all: tracking
+    // needs only this process, and a hidden window would hold a renderer
+    // (and its memory) that nobody is looking at. The tray icon or
+    // Ctrl+Alt+O builds the window when someone wants it.
+    if (!(process.argv.includes(HIDDEN_FLAG) && tray)) createWindow()
 
     tracker.start()
     registerGlobalShortcuts()

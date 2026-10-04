@@ -20,7 +20,8 @@
 import type { CalendarEvent, IdleBlock, Productivity, Session } from '../../core/types'
 
 /** How the grid is grouped — the filter tabs above the day view. */
-export type GroupMode = 'category' | 'project' | 'app'
+/** By project (the label each session is filed under) or by app. */
+export type GroupMode = 'category' | 'app'
 
 export type EntryKind = 'session' | 'away' | 'event'
 
@@ -69,30 +70,14 @@ export interface DayEntry {
  */
 export const DEFAULT_MERGE_GAP_SECONDS = 600
 
-const NO_PROJECT = 'No project'
-
-/**
- * The group key a session belongs to.
- *
- * Projects resolve through the caller's id→name map rather than the session's
- * category, because a session can be attributed to a project while carrying a
- * rule-assigned category — the two are separate channels by design.
- */
-export function groupKeyFor(
-  session: Session,
-  mode: GroupMode,
-  projectNames: Map<string, string>
-): string {
+/** The group key a session belongs to. */
+export function groupKeyFor(session: Session, mode: GroupMode): string {
   // A focus session outranks every grouping except "by app": the user declared
   // that stretch to be one thing, and splitting their 45 minutes back into
   // three category blocks throws that declaration away. Apps are exempt because
   // "which app did the focus session go in" is exactly what that tab is for.
   if (mode !== 'app' && session.focus) return session.focus.label
   if (mode === 'app') return session.app || 'Unknown app'
-  if (mode === 'project') {
-    const name = session.projectId ? projectNames.get(session.projectId) : undefined
-    return name || NO_PROJECT
-  }
   return session.category || 'Uncategorized'
 }
 
@@ -169,8 +154,6 @@ function finish(label: string, sessions: Session[]): DayEntry {
 
 export interface BuildOptions {
   mode: GroupMode
-  /** Project id → display name. */
-  projectNames: Map<string, string>
   mergeGapSeconds?: number
   idle?: IdleBlock[]
   events?: CalendarEvent[]
@@ -193,7 +176,7 @@ export function buildEntries(sessions: Session[], opts: BuildOptions): DayEntry[
   }
 
   for (const session of ordered) {
-    const label = groupKeyFor(session, opts.mode, opts.projectNames)
+    const label = groupKeyFor(session, opts.mode)
     const previous = run[run.length - 1]
     if (previous && label === runLabel && session.startTime - previous.endTime <= gapMs) {
       run.push(session)

@@ -8,6 +8,7 @@ import {
   IconCheck,
   IconDashboard,
   IconFocus,
+  IconFolder,
   IconTarget,
   IconWeek,
 } from './Icons'
@@ -169,13 +170,18 @@ function Point({ title, body }: { title: string; body: string }) {
 const TOUR: Array<{ icon: ReactNode; name: string; body: string }> = [
   {
     icon: <IconDashboard />,
-    name: 'Dashboard',
-    body: 'Today at a glance: time tracked, focus score, top apps.',
+    name: 'Today',
+    body: 'How today is going: time tracked, focus and your top apps.',
   },
   {
     icon: <IconCalendar />,
     name: 'Calendar',
-    body: 'Your day as a timeline. Click any block to rename, split or fix it.',
+    body: 'Your day hour by hour. Click any block to move it to a project or fix its times.',
+  },
+  {
+    icon: <IconFolder />,
+    name: 'Projects',
+    body: 'Add what you work on. OpenTime files your time there by itself, and learns when you correct it.',
   },
   {
     icon: <IconFocus />,

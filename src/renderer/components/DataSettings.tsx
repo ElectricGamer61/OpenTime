@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-import { lastNDayKeys } from '../../core/day'
+import { dayKey, lastNDayKeys } from '../../core/day'
 import type { Settings } from '../../core/types'
 import type { ExportFormat } from '../../shared/ipc'
 import { IconInfo } from './Icons'
@@ -85,8 +85,8 @@ export function DataSettings({
         {days
           ? `${days} tracked day${days === 1 ? '' : 's'} stored in `
           : 'Nothing recorded yet. Your history will be stored in '}
-        <code className="mono">{app.dataDirectory}</code>. One file per day, plain JSON — readable
-        without OpenTime, and yours to copy, sync or delete.
+        <code className="mono">{app.dataDirectory}</code>. One file per day, in plain JSON you can
+        read without OpenTime, and yours to copy, sync or delete.
       </p>
 
       <div className="setting-row">
@@ -165,14 +165,31 @@ export function DataSettings({
         <div>
           <div className="setting-name">Keep history for</div>
           <div className="setting-desc">
-            Older days are deleted from disk, not hidden. Off by default — OpenTime does not throw
+            Older days are deleted from disk, not hidden. Off by default: OpenTime never throws
             away your history unless you ask it to.
           </div>
         </div>
         <select
           aria-label="Keep history for"
           value={draft.retentionDays}
-          onChange={(e) => patch({ retentionDays: Number(e.target.value) })}
+          onChange={(e) => {
+            // Settings save the moment they change, so this is the last
+            // chance to say what a shorter history actually deletes.
+            const days = Number(e.target.value)
+            if (days > 0) {
+              const oldestKept = lastNDayKeys(days, dayKey(Date.now(), draft.dayStartHour))[0]
+              const lost = app.historyKeys.filter((k) => k < oldestKept).length
+              if (
+                lost > 0 &&
+                !window.confirm(
+                  `This deletes ${lost} older day${lost === 1 ? '' : 's'} of history from this computer, and they cannot be brought back. Continue?`
+                )
+              ) {
+                return
+              }
+            }
+            patch({ retentionDays: days })
+          }}
         >
           {RETENTION_CHOICES.map((c) => (
             <option key={c.value} value={c.value}>

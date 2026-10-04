@@ -412,7 +412,7 @@ export const WeekChart = memo(function WeekChart({
               e.preventDefault() // Space must activate, not scroll the page.
               onSelect(d.dayKey)
             }}
-            title={`${longDate(dayStartTs(d.dayKey, dayStartHour))} — ${duration(d.totalSeconds)} tracked, focus ${d.focusScore}`}
+            title={`${longDate(dayStartTs(d.dayKey, dayStartHour))}: ${duration(d.totalSeconds)} tracked, focus ${d.focusScore}`}
           >
             <div className="week-stack" style={{ height: `${Math.max(2, stackHeight)}%` }}>
               {segments.map((s) =>
@@ -432,7 +432,7 @@ export const WeekChart = memo(function WeekChart({
                 <b>{Number(d.dayKey.slice(-2))}</b>
               ) : (
                 <>
-                  <b>{d.totalSeconds ? duration(d.totalSeconds) : '—'}</b>
+                  <b>{d.totalSeconds ? duration(d.totalSeconds) : '-'}</b>
                   {weekdayShort(dayStartTs(d.dayKey, dayStartHour))}
                 </>
               )}

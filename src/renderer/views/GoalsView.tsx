@@ -65,7 +65,7 @@ export function GoalsView({ app, onOpenDay }: { app: OpenTimeState; onOpenDay():
         <div className="goals-side">
           <div className="card">
             <h2 className="card-title">
-              The week a target is set against
+              This week
               {/* Short form on purpose: this column is half the width of the
                   one Reports uses, and the long form wrapped the whole
                   header onto two lines. */}
@@ -90,14 +90,11 @@ export function GoalsView({ app, onOpenDay }: { app: OpenTimeState; onOpenDay():
           </div>
 
           <div className="card">
-            <h2 className="card-title">Why there are no streaks</h2>
+            <h2 className="card-title">How goals work</h2>
             <p className="prose">
-              A goal here is a floor or a ceiling on a slice of time, paced against how much of the
-              window has actually elapsed — so a weekly target is never reported as “behind” on a
-              Monday morning by construction. There is nothing to break, nothing to lose, and both
-              starter goals ship switched off. Goals that arrive pre-enabled are goals somebody
-              else set for you, and the first thing anyone does with those is stop believing the
-              number.
+              Pick a target, like four hours of focus a day or less than an hour of distraction.
+              OpenTime shows how today is going against it. Weekly goals are paced across the week,
+              so a Monday morning never counts as behind.
             </p>
           </div>
         </div>

@@ -12,7 +12,7 @@
  * Screenshots of each view land in the output directory alongside results.json.
  */
 
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -134,7 +134,8 @@ const clickTab = (s, label) => s.eval(`
 /** React overwrites .value setters, so typing must go through the native one. */
 const REACT_SET = `
 const setVal = (el, v) => {
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
+    : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
   Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v)
   el.dispatchEvent(new Event('input', { bubbles: true }))
   el.dispatchEvent(new Event('change', { bubbles: true }))
@@ -256,7 +257,7 @@ async function main() {
     !resumed.paused ? pass('resume tracking') : fail('resume tracking')
 
     // Pause/resume from the UI button on the Now card.
-    await clickTab(s, 'Dashboard')
+    await clickTab(s, 'Today')
     const uiToggle = await s.eval(`
       const b = [...document.querySelectorAll('.now button')].find(x => /pause|resume/i.test(x.textContent))
       if (!b) return 'no button'
@@ -416,6 +417,18 @@ async function main() {
       pencil.click(); await new Promise(r => setTimeout(r, 500))
       if (!document.querySelector('.drawer .inspector')) return { err: 'review drawer did not open' }
     `
+    const why = await s.eval(`
+      ${openDrawer}
+      const text = document.querySelector('.inspector-why')?.textContent.trim() || ''
+      document.querySelector('.drawer .icon-btn[title="Close"]')?.click()
+      await new Promise(r => setTimeout(r, 300))
+      return { text }
+    `)
+    why.err ? fail('the review panel says why a block was filed', why.err)
+      : /matched|mentions|rule|learned|stayed with|nothing matched/i.test(why.text)
+        ? pass('the review panel says why a block was filed', why.text)
+        : fail('the review panel says why a block was filed', JSON.stringify(why))
+
     const retag = await s.eval(`${REACT_SET}
       ${openDrawer}
       const input = document.querySelector('#insp-category')
@@ -888,7 +901,7 @@ async function main() {
       // The table below stays on one day whatever the toggle says, so it has
       // to name that day rather than let the reader assume it followed.
       const table = [...document.querySelectorAll('.card')].find(
-        c => /recorded sessions/i.test(c.querySelector('.card-title')?.textContent || '')
+        c => /everything recorded/i.test(c.querySelector('.card-title')?.textContent || '')
       )
       const tableHint = table?.querySelector('.hint')?.textContent.trim()
       day.click(); await new Promise(r => setTimeout(r, 500))
@@ -919,6 +932,63 @@ async function main() {
       : proj.found ? pass('add a project from the UI', `${proj.n} projects`)
       : fail('add a project from the UI', 'not persisted')
 
+    const qaCard = `[...document.querySelectorAll('.project-card')].find(c => c.querySelector('.project-name')?.value === 'QA Project')`
+    const chips = await s.eval(`${REACT_SET}
+      const card = ${qaCard}
+      if (!card) return { err: 'no card for the new project' }
+      const input = card.querySelector('.chip-input')
+      setVal(input, 'https://www.QA-Tool.com/page?x=1, qa word')
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      // No pause on purpose: picking "Counts as" straight after adding a
+      // keyword used to save the project back without the keyword.
+      setVal(card.querySelector('.project-counts'), 'distracting')
+      await new Promise(r => setTimeout(r, 700))
+      const p = (await window.opentime.getBootstrap()).projects.find(x => x.name === 'QA Project')
+      const shown = [...(${qaCard}).querySelectorAll('.chip')].map(c => c.textContent.trim())
+      return { keywords: p.keywords, productivity: p.productivity, shown }
+    `)
+    chips.err ? fail('add keywords as chips, commas and all', chips.err)
+      : JSON.stringify(chips.keywords) === JSON.stringify(['qa-tool.com/page', 'qa word']) && chips.shown.length === 2
+        ? pass('add keywords as chips, commas and all', chips.keywords.join(' | '))
+        : fail('add keywords as chips, commas and all', JSON.stringify(chips))
+    chips.productivity === 'distracting'
+      ? pass('a project can count as distraction')
+      : fail('a project can count as distraction', JSON.stringify(chips))
+
+    // Move a real tracked block into the project through the review drawer:
+    // the project learns that block's words, and says so on its card.
+    await clickTab(s, 'Calendar')
+    const learn = await s.eval(`${REACT_SET}
+      ${openDrawer}
+      const title = document.querySelector('.inspector-title')?.textContent.trim()
+      setVal(document.querySelector('#insp-category'), 'QA Project')
+      await new Promise(r => setTimeout(r, 250))
+      const hint = [...document.querySelectorAll('.inspector .hint')].some(h => /learns from this block/.test(h.textContent))
+      ;[...document.querySelectorAll('.inspector button')].find(b => b.textContent.trim() === 'Apply').click()
+      await new Promise(r => setTimeout(r, 1200))
+      const p = (await window.opentime.getBootstrap()).projects.find(x => x.name === 'QA Project')
+      return { title, hint, learned: Object.keys(p.learned || {}) }
+    `)
+    learn.err ? fail('moving a block into a project teaches it', learn.err)
+      : learn.hint && learn.learned.length > 0
+        ? pass('moving a block into a project teaches it', `"${learn.title}" → ${learn.learned.join(', ')}`)
+        : fail('moving a block into a project teaches it', JSON.stringify(learn))
+
+    await clickTab(s, 'Projects')
+    const forget = await s.eval(`
+      const card = ${qaCard}
+      const line = card?.querySelector('.project-learned')?.textContent || ''
+      const btn = card?.querySelector('.project-learned button')
+      if (!btn) return { err: 'no learned-words line on the card', line }
+      btn.click(); await new Promise(r => setTimeout(r, 700))
+      const p = (await window.opentime.getBootstrap()).projects.find(x => x.name === 'QA Project')
+      return { line, after: Object.keys(p.learned || {}).length, gone: !(${qaCard}).querySelector('.project-learned') }
+    `)
+    forget.err ? fail('a project shows what it learned, and can forget it', forget.err + ' ' + forget.line)
+      : forget.after === 0 && forget.gone
+        ? pass('a project shows what it learned, and can forget it', forget.line.replace('Forget', '').trim())
+        : fail('a project shows what it learned, and can forget it', JSON.stringify(forget))
+
     const rules = await s.eval(`
       const before = (await window.opentime.getBootstrap()).rules.length
       const r = await window.opentime.saveRules([...(await window.opentime.getBootstrap()).rules,
@@ -930,6 +1000,35 @@ async function main() {
     // ── 12. Settings ───────────────────────────────────────────────────────
     await clickTab(s, 'Settings')
     await shoot(s, '07-settings.png')
+
+    const connector = await s.eval(`
+      ;[...document.querySelectorAll('.settings-nav button')].find(b => /assistant/i.test(b.textContent)).click()
+      await new Promise(r => setTimeout(r, 300))
+      const text = document.querySelector('.assistant-config pre')?.textContent || ''
+      try { return { config: JSON.parse(text).mcpServers.opentime } } catch { return { err: 'no setup block', text } }
+    `)
+    await shoot(s, '07b-settings-assistant.png')
+    if (connector.err) fail('the assistant setup from Settings starts a working connector', connector.err)
+    else {
+      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
+      const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js')
+      const client = new Client({ name: 'e2e', version: '0' })
+      try {
+        const { command, args, env } = connector.config
+        await client.connect(new StdioClientTransport({ command, args, env: { ...process.env, ...env } }))
+        const tools = (await client.listTools()).tools.map((t) => t.name)
+        const answer = await client.callTool({ name: 'time_summary', arguments: { range: 'this week' } })
+        const text = answer.content?.[0]?.text || ''
+        const first = text.split('\n')[0].slice(0, 70)
+        tools.includes('time_summary') && /tracked/i.test(text) && !answer.isError
+          ? pass('the assistant setup from Settings starts a working connector', `${tools.length} tools; "${first}"`)
+          : fail('the assistant setup from Settings starts a working connector', JSON.stringify({ tools, text: text.slice(0, 200) }))
+      } catch (err) {
+        fail('the assistant setup from Settings starts a working connector', String(err?.message || err))
+      } finally {
+        await client.close().catch(() => {})
+      }
+    }
     const sections = await s.eval(`
       const nav = [...document.querySelectorAll('.settings-nav button')]
       if (nav.length < 4) return { err: 'settings navigation is missing sections' }
@@ -954,18 +1053,24 @@ async function main() {
     `)
     setSave.idle === 300 && setSave.notif ? pass('settings save and survive a re-read') : fail('settings save and survive a re-read', JSON.stringify(setSave))
 
+    // Settings have no Save button: a change is on disk a moment later, and
+    // the page says so.
     const settingsUi = await s.eval(`
-      const sw = document.querySelector('.switch')
+      ;[...document.querySelectorAll('.settings-nav button')].find(b => /general/i.test(b.textContent)).click()
+      await new Promise(r => setTimeout(r, 300))
+      const sw = [...document.querySelectorAll('.settings-pane > .card')].find(c => !c.hidden).querySelector('.switch')
       if (!sw) return { err: 'no toggle switch on Settings' }
-      const was = sw.classList.contains('on')
-      sw.click(); await new Promise(r => setTimeout(r, 400))
-      const now = document.querySelector('.switch').classList.contains('on')
-      const dirty = !!document.querySelector('.pill.warn')
-      return { toggled: was !== now, dirty }
+      const before = (await window.opentime.getBootstrap()).settings.launchAtLogin
+      sw.click(); await new Promise(r => setTimeout(r, 900))
+      const after = (await window.opentime.getBootstrap()).settings.launchAtLogin
+      const note = document.querySelector('.saved-note')?.textContent.trim()
+      const noSave = ![...document.querySelectorAll('.page-head button')].some(x => x.textContent.trim() === 'Save')
+      sw.click(); await new Promise(r => setTimeout(r, 900))
+      return { before, after, note, noSave }
     `)
-    settingsUi.toggled && settingsUi.dirty
-      ? pass('a Settings switch toggles and flags unsaved changes')
-      : fail('a Settings switch toggles and flags unsaved changes', JSON.stringify(settingsUi))
+    !settingsUi.err && settingsUi.after === !settingsUi.before && settingsUi.note === 'Saved' && settingsUi.noSave
+      ? pass('a Settings switch saves itself, with no Save button')
+      : fail('a Settings switch saves itself, with no Save button', JSON.stringify(settingsUi))
 
     const invalid = await s.eval(`
       const before = (await window.opentime.getBootstrap()).settings
@@ -992,10 +1097,7 @@ async function main() {
           page: getComputedStyle(document.body).backgroundColor,
         }
       }
-      opt('Dark').click(); await new Promise(r => setTimeout(r, 300))
-      const save = [...document.querySelectorAll('.page-head button')].find(x => x.textContent.trim() === 'Save')
-      if (!save || save.disabled) return { err: 'Save did not enable after changing the theme' }
-      save.click(); await new Promise(r => setTimeout(r, 1000))
+      opt('Dark').click(); await new Promise(r => setTimeout(r, 1000))
       seen.saved = (await window.opentime.getBootstrap()).settings.theme
       return seen
     `)
@@ -1037,8 +1139,7 @@ async function main() {
       await new Promise(r => setTimeout(r, 100))
       input.nextElementSibling.click(); await new Promise(r => setTimeout(r, 200))
       const chips = [...pane.querySelectorAll('.chip-list .chip')].map(c => c.textContent.trim())
-      const save = [...document.querySelectorAll('.page-head button')].find(x => x.textContent.trim() === 'Save')
-      save.click(); await new Promise(r => setTimeout(r, 800))
+      await new Promise(r => setTimeout(r, 900))
       const b = (await window.opentime.getBootstrap()).settings.blocking
       return { chips, enabled: b.enabled, saved: b.targets.includes('example.com') }
     `)
@@ -1187,7 +1288,7 @@ async function main() {
       : fail('remove demo data clears exactly the seeded days', JSON.stringify(demo))
 
     // ── 17. Every view survives an empty store ─────────────────────────────
-    const views = ['Dashboard', 'Calendar', 'Activity', 'Projects', 'Goals', 'Reports', 'Settings']
+    const views = ['Today', 'Calendar', 'Activity', 'Projects', 'Goals', 'Reports', 'Settings']
     const broken = []
     for (const view of views) {
       await clickTab(s, view)
@@ -1213,10 +1314,18 @@ async function main() {
     fail('driver completed', err.message)
     console.error(err)
   } finally {
-    try { process.kill(-child.pid, 'SIGTERM') } catch {}
-    await sleep(1200)
-    try { process.kill(-child.pid, 'SIGKILL') } catch {}
-    await sleep(400)
+    if (process.platform === 'win32') {
+      // A negative pid (a process group) means nothing on Windows: the kill
+      // below threw, was swallowed, and every run left the app running to
+      // hold the next run's store lock. taskkill /T takes the whole tree.
+      try { execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }) } catch {}
+      await sleep(800)
+    } else {
+      try { process.kill(-child.pid, 'SIGTERM') } catch {}
+      await sleep(1200)
+      try { process.kill(-child.pid, 'SIGKILL') } catch {}
+      await sleep(400)
+    }
   }
 
   const bad = results.filter((r) => !r.ok)

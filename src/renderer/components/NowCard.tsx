@@ -26,7 +26,7 @@ export const NowCard = memo(function NowCard({ status, onToggle }: Props) {
   const detail = current
     ? [current.app, current.url, current.title].filter(Boolean).join(' · ')
     : status?.demo
-      ? 'Demo capture adapter — no OS window access in this environment.'
+      ? 'Showing example activity: this computer does not let OpenTime read windows.'
       : 'No input detected. OpenTime is watching for your return.'
 
   return (
@@ -46,7 +46,7 @@ export const NowCard = memo(function NowCard({ status, onToggle }: Props) {
       </div>
 
       <div className="now-right">
-        <div className={`now-timer${current ? '' : ' dim'}`}>{current ? clock(elapsed) : '—'}</div>
+        <div className={`now-timer${current ? '' : ' dim'}`}>{current ? clock(elapsed) : '-'}</div>
         {stretch >= 60 && !paused ? (
           <span className="pill live">
             <i className="swatch" />

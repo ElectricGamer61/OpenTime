@@ -135,6 +135,18 @@ export interface Bootstrap {
   /** Day keys holding seeded demo history, so the UI can offer to clear them. */
   demoDays: string[]
   update: UpdateState
+  /**
+   * How an MCP client starts OpenTime's read-only server (`src/mcp/`) from
+   * this install: the app's own executable run as Node, so nothing else has to
+   * be installed. Shown in Settings as a block to paste into the client.
+   */
+  assistant: AssistantConnector
+}
+
+export interface AssistantConnector {
+  command: string
+  args: string[]
+  env: Record<string, string>
 }
 
 export interface RecategorizeRequest {

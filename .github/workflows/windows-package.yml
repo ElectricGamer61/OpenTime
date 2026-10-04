@@ -158,6 +158,16 @@ jobs:
           }
           Write-Host "Confirmed native capture is active in the installed app: $($health.adapter)"
 
+      # Two pieces only exist once packaged: the browser address reader, a
+      # program that must be unpacked from the asar to run at all, and the
+      # assistant connector, started the way Settings -> Assistant says.
+      - name: Verify the address reader and assistant connector in the installed app
+        shell: pwsh
+        run: |
+          $exePath = Join-Path $env:LOCALAPPDATA "Programs\OpenTime\OpenTime.exe"
+          node scripts/verify-install.mjs $exePath
+          if ($LASTEXITCODE -ne 0) { throw "verify-install failed" }
+
       # electron-builder can only stamp build/icon.ico into the .exe's
       # resources (rcedit) on a real Windows host, and NSIS shortcut/installer
       # icon wiring can only be inspected the same way. Checks every place a

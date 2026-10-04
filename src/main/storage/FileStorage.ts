@@ -37,6 +37,15 @@ import path from 'node:path'
 
 import { dayKey } from '../../core/day'
 import { defaultConfig, migrateConfig, sanitizeSettings, STATE_VERSION } from '../../core/defaults'
+import {
+  DAY_KEY_RE,
+  foldRecord,
+  parseJournal,
+  recordKeys,
+  sortSessions,
+  type JournalRecord,
+  type SessionPatch,
+} from '../../core/journal'
 import type {
   CalendarEvent,
   CategoryRule,
@@ -57,8 +66,6 @@ const CACHE_LIMIT = 45
 /** Checkpoint (and truncate the journal) once it grows past this many records. */
 const JOURNAL_CHECKPOINT_RECORDS = 400
 
-const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
-
 interface DayFile extends DayRecord {
   /** Highest journal sequence already folded into this file. */
   lastSeq: number
@@ -71,14 +78,6 @@ interface CacheEntry {
   touched: number
 }
 
-type JournalRecord =
-  | { seq: number; op: 'appendSessions'; days: Record<string, Session[]> }
-  | { seq: number; op: 'putSessions'; key: string; sessions: Session[] }
-  | { seq: number; op: 'appendIdle'; key: string; block: IdleBlock }
-  | { seq: number; op: 'putIdle'; key: string; blocks: IdleBlock[] }
-  | { seq: number; op: 'putEvents'; key: string; events: CalendarEvent[] }
-  | { seq: number; op: 'updateSession'; key: string; id: string; patch: Partial<Session> }
-
 interface MetaFile extends StoreConfig {
   /** Day keys whose contents are synthesised, so they can be cleared in one action. */
   demoDays?: string[]
@@ -86,10 +85,6 @@ interface MetaFile extends StoreConfig {
 
 function emptyDay(): DayFile {
   return { sessions: [], idle: [], events: [], lastSeq: 0 }
-}
-
-function sortSessions(list: Session[]): Session[] {
-  return list.sort((a, b) => a.startTime - b.startTime || a.endTime - b.endTime)
 }
 
 export class FileStorage implements Storage {
@@ -249,14 +244,7 @@ export class FileStorage implements Storage {
     }
     const lines = raw.split('\n').filter((l) => l.trim())
     let applied = 0
-    for (const line of lines) {
-      let record: JournalRecord
-      try {
-        record = JSON.parse(line) as JournalRecord
-      } catch {
-        continue
-      }
-      if (!record || typeof record.seq !== 'number') continue
+    for (const record of parseJournal(raw)) {
       this.seq = Math.max(this.seq, record.seq)
       if (await this.applyRecord(record, true)) applied += 1
     }
@@ -441,7 +429,7 @@ export class FileStorage implements Storage {
     await this.write({ seq: this.nextSeq(), op: 'putEvents', key, events })
   }
 
-  async updateSession(key: string, id: string, patch: Partial<Session>): Promise<Session | null> {
+  async updateSession(key: string, id: string, patch: SessionPatch): Promise<Session | null> {
     const { record } = await this.load(key)
     if (!record.sessions.some((s) => s.id === id)) return null
     await this.write({ seq: this.nextSeq(), op: 'updateSession', key, id, patch })
@@ -467,48 +455,12 @@ export class FileStorage implements Storage {
    * Returns whether it was applied.
    */
   private async applyRecord(record: JournalRecord, replaying: boolean): Promise<boolean> {
-    const keys = record.op === 'appendSessions' ? Object.keys(record.days) : [record.key]
     let applied = false
 
-    for (const key of keys) {
-      if (!DAY_KEY_RE.test(key)) continue
+    for (const key of recordKeys(record)) {
       const entry = await this.load(key)
       if (replaying && record.seq <= entry.record.lastSeq) continue
-
-      switch (record.op) {
-        case 'appendSessions': {
-          const incoming = record.days[key] || []
-          const list = entry.record.sessions
-          const tail = list[list.length - 1]
-          list.push(...incoming)
-          // Sessions arrive chronologically in the common case, so a tail check
-          // beats re-sorting the day on every flush.
-          if (tail && incoming.some((s) => s.startTime < tail.startTime)) sortSessions(list)
-          break
-        }
-        case 'putSessions':
-          entry.record.sessions = sortSessions([...record.sessions])
-          break
-        case 'appendIdle':
-          entry.record.idle.push(record.block)
-          break
-        case 'putIdle':
-          entry.record.idle = [...record.blocks]
-          break
-        case 'putEvents':
-          entry.record.events = [...record.events]
-          break
-        case 'updateSession': {
-          const index = entry.record.sessions.findIndex((s) => s.id === record.id)
-          if (index < 0) break
-          entry.record.sessions[index] = {
-            ...entry.record.sessions[index],
-            ...record.patch,
-            id: entry.record.sessions[index].id,
-          }
-          break
-        }
-      }
+      foldRecord(entry.record, key, record)
 
       entry.record.lastSeq = Math.max(entry.record.lastSeq, record.seq)
       entry.dirty = true

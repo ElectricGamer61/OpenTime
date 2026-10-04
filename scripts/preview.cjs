@@ -93,9 +93,16 @@ const SHOTS = [
     name: 'focus',
     steps: [click('.focus-start'), typeGoal('Write the report')],
   },
-  { name: 'dashboard-focus', steps: [click('.nav-item', 'Dashboard')] },
+  { name: 'dashboard-focus', steps: [click('.nav-item', 'Today')] },
   { name: 'settings-privacy', steps: [click('.nav-item', 'Settings'), click('.settings-nav button', 'Privacy')] },
   { name: 'goals', steps: [click('.nav-item', 'Goals')] },
+  { name: 'projects', steps: [click('.nav-item', 'Projects')] },
+  { name: 'settings-assistant', steps: [click('.nav-item', 'Settings'), click('.settings-nav button', 'Assistant')] },
+  {
+    // A tracked block opened for review: the panel says why it was filed.
+    name: 'review-block',
+    steps: [click('.entry.session'), click('.popover-actions .icon-btn')],
+  },
   {
     // The rail's music player, opened, with a sound playing.
     name: 'music-player',

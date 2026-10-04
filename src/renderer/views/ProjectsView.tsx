@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { summarizeDay, summarizeWeek } from '../../core/aggregate'
-import type { CategoryRule, Project } from '../../core/types'
+import { normalizeKeyword } from '../../core/categorize'
+import type { CategoryRule, Productivity, Project } from '../../core/types'
 import { Breakdown } from '../components/Charts'
 import { Empty } from '../components/Empty'
 import { IconClose, IconEmptyRule } from '../components/Icons'
@@ -13,7 +14,13 @@ import type { OpenTimeState } from '../state/useOpenTime'
    the user creates cannot land on a colour the grid would never draw. */
 const PALETTE = [...CATEGORY_PALETTE]
 
-/** Projects and rules — the categorisation layer, editable without a restart. */
+const COUNTS_AS: Array<{ id: Productivity; label: string }> = [
+  { id: 'productive', label: 'Productive' },
+  { id: 'neutral', label: 'Neutral' },
+  { id: 'distracting', label: 'Distracting' },
+]
+
+/** Projects, what each one matches, and the rules the user taught. */
 export function ProjectsView({ app }: { app: OpenTimeState }) {
   const [draft, setDraft] = useState('')
 
@@ -27,22 +34,42 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
     [weekTotals]
   )
 
-  const update = (id: string, patch: Partial<Project>) =>
-    void app.saveProjects(app.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)))
+  // Every change builds on the last one made here, not on `app.projects`,
+  // which only catches up once a save comes back. Built on that, a keyword
+  // typed and then a "Counts as" picked straight after (the field's blur
+  // saves the keyword) wrote the project back without the keyword.
+  const latest = useRef(app.projects)
+  useEffect(() => {
+    latest.current = app.projects
+  }, [app.projects])
+  const save = (next: Project[]) => {
+    latest.current = next
+    void app.saveProjects(next)
+  }
 
-  const remove = (id: string) => void app.saveProjects(app.projects.filter((p) => p.id !== id))
+  /** A patch, or a function of the project as it stands now (for lists). */
+  type Change = Partial<Project> | ((p: Project) => Partial<Project>)
+  const update = (id: string, change: Change) =>
+    save(
+      latest.current.map((p) =>
+        p.id === id ? { ...p, ...(typeof change === 'function' ? change(p) : change) } : p
+      )
+    )
+
+  const remove = (id: string) => save(latest.current.filter((p) => p.id !== id))
 
   const add = () => {
     const name = draft.trim()
     if (!name) return
+    // No keywords to start with: a project is already found by its name.
     const project: Project = {
       id: `p_${Date.now().toString(36)}`,
       name,
-      color: PALETTE[app.projects.length % PALETTE.length],
-      keywords: [name.toLowerCase()],
+      color: PALETTE[latest.current.length % PALETTE.length],
+      keywords: [],
     }
     setDraft('')
-    void app.saveProjects([...app.projects, project])
+    save([...latest.current, project])
   }
 
   const removeRule = (rule: CategoryRule) =>
@@ -52,9 +79,10 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">Projects &amp; rules</h1>
+          <h1 className="page-title">Projects</h1>
           <p className="page-sub">
-            Keywords are matched against the app name, window title and site host. First match wins.
+            Time lands in a project when the window mentions its name, shows one of its words or
+            sites, or looks like blocks you moved there before.
           </p>
         </div>
       </div>
@@ -63,59 +91,29 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
         <div className="grid" style={{ gap: 14, alignContent: 'start' }}>
           <div className="card">
             <h2 className="card-title">
-              Projects
+              Your projects
               <span className="hint">Last 7 days</span>
             </h2>
             {app.projects.length === 0 ? (
               <Empty
                 title="No projects yet"
-                hint="A project groups activity by keyword, so your time lands under a name you chose rather than an app name."
+                hint="Name one after what you work on, like a client, a course or a video, and your time lands under it."
               />
             ) : null}
             {app.projects.map((p) => (
-              <div className="project-row" key={p.id}>
-                <input
-                  type="color"
-                  aria-label={`${p.name} colour`}
-                  value={p.color}
-                  onChange={(e) => update(p.id, { color: e.target.value })}
-                  style={{ padding: 0, width: 22, height: 22, border: 'none', background: 'none' }}
-                />
-                <input
-                  aria-label={`${p.name} name`}
-                  value={p.name}
-                  onChange={(e) => update(p.id, { name: e.target.value })}
-                />
-                <input
-                  aria-label={`${p.name} keywords`}
-                  value={p.keywords.join(', ')}
-                  placeholder="keywords, comma separated"
-                  onChange={(e) =>
-                    update(p.id, {
-                      keywords: e.target.value
-                        .split(',')
-                        .map((k) => k.trim().toLowerCase())
-                        .filter(Boolean),
-                    })
-                  }
-                />
-                <div className="row" style={{ gap: 6 }}>
-                  <span className="pill mono">{duration(secondsByCategory.get(p.name) || 0)}</span>
-                  <button
-                    className="icon-btn danger"
-                    onClick={() => remove(p.id)}
-                    title={`Delete ${p.name}`}
-                    aria-label={`Delete ${p.name}`}
-                  >
-                    <IconClose size={14} />
-                  </button>
-                </div>
-              </div>
+              <ProjectCard
+                key={p.id}
+                project={p}
+                seconds={secondsByCategory.get(p.name) || 0}
+                onChange={(patch) => update(p.id, patch)}
+                onRemove={() => remove(p.id)}
+              />
             ))}
 
-            <div className="row" style={{ marginTop: 14 }}>
+            <div className="row project-add">
               <input
-                placeholder="New project name"
+                placeholder="New project, like “OpenTime” or “AP Bio”"
+                aria-label="New project name"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -123,7 +121,7 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
                 }}
                 style={{ flex: 1 }}
               />
-              <button className="btn primary" onClick={add}>
+              <button className="btn primary" onClick={add} disabled={!draft.trim()}>
                 Add project
               </button>
             </div>
@@ -131,14 +129,14 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
 
           <div className="card">
             <h2 className="card-title">
-              Learned rules
-              <span className="hint">Checked before projects</span>
+              Rules you made
+              <span className="hint">Checked first</span>
             </h2>
             {app.rules.length === 0 ? (
               <Empty
                 glyph={<IconEmptyRule />}
                 title="No rules yet"
-                hint="Retag a block on the timeline and choose “Whole app” or “Matching text” to teach one."
+                hint="Open a block on the calendar, pick a project and choose “Whole app” or “Matching text” to make one."
               />
             ) : (
               app.rules.map((r) => (
@@ -159,12 +157,155 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
 
         <div className="card" style={{ alignSelf: 'start' }}>
           <h2 className="card-title">
-            Time by category
+            Time by project
             <span className="hint">Last 7 days</span>
           </h2>
           <Breakdown buckets={weekTotals.byCategory} projects={app.projects} limit={12} />
         </div>
       </div>
     </>
+  )
+}
+
+/**
+ * One project: its name and colour, how its time counts, the words and sites
+ * that file time under it, and what it has learned from the user's own moves.
+ *
+ * The name is edited as a draft and saved on Enter or leaving the field. Saved
+ * on every keystroke, a half-typed name was briefly a real project name.
+ */
+function ProjectCard({
+  project,
+  seconds,
+  onChange,
+  onRemove,
+}: {
+  project: Project
+  seconds: number
+  onChange(change: Partial<Project> | ((p: Project) => Partial<Project>)): void
+  onRemove(): void
+}) {
+  const [name, setName] = useState(project.name)
+  const [keyword, setKeyword] = useState('')
+  useEffect(() => setName(project.name), [project.name])
+
+  const commitName = () => {
+    const next = name.trim()
+    if (next && next !== project.name) onChange({ name: next })
+    else setName(project.name)
+  }
+
+  const addKeyword = () => {
+    const values = keyword
+      .split(',')
+      .map(normalizeKeyword)
+      .filter((v) => v && !project.keywords.includes(v))
+    if (values.length) {
+      onChange((p) => ({ keywords: [...p.keywords, ...new Set(values.filter((v) => !p.keywords.includes(v)))] }))
+    }
+    setKeyword('')
+  }
+
+  const learned = useMemo(
+    () =>
+      Object.entries(project.learned || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([word]) => word),
+    [project.learned]
+  )
+
+  return (
+    <div className="project-card">
+      <div className="project-card-head">
+        <input
+          type="color"
+          aria-label={`${project.name} colour`}
+          value={project.color}
+          onChange={(e) => onChange({ color: e.target.value })}
+        />
+        <input
+          className="project-name"
+          aria-label={`${project.name} name`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            if (e.key === 'Escape') setName(project.name)
+          }}
+        />
+        <select
+          className="project-counts"
+          aria-label={`${project.name} counts as`}
+          value={project.productivity || 'productive'}
+          onChange={(e) => onChange({ productivity: e.target.value as Productivity })}
+        >
+          {COUNTS_AS.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <span className="pill mono project-time">{duration(seconds)}</span>
+        <button
+          className="icon-btn danger"
+          onClick={onRemove}
+          title={`Delete ${project.name}`}
+          aria-label={`Delete ${project.name}`}
+        >
+          <IconClose size={14} />
+        </button>
+      </div>
+
+      <div className="project-card-body">
+        <div className="chip-list project-keywords">
+          {project.keywords.map((k) => (
+            <span className="chip" key={k}>
+              {k}
+              <button
+                aria-label={`Stop matching ${k}`}
+                title={`Stop matching ${k}`}
+                onClick={() => onChange((p) => ({ keywords: p.keywords.filter((x) => x !== k) }))}
+              >
+                <IconClose size={12} />
+              </button>
+            </span>
+          ))}
+          <input
+            className="chip-input"
+            aria-label={`Add a word or site to ${project.name}`}
+            placeholder={project.keywords.length ? 'Add…' : 'Add a word or site, like youtube.com'}
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onBlur={addKeyword}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault()
+                addKeyword()
+              }
+              if (e.key === 'Backspace' && !keyword && project.keywords.length) {
+                onChange((p) => ({ keywords: p.keywords.slice(0, -1) }))
+              }
+            }}
+          />
+        </div>
+
+        {learned.length ? (
+          <div className="project-learned">
+            <span>
+              Learned from your blocks: <b>{learned.slice(0, 5).join(', ')}</b>
+              {learned.length > 5 ? ` and ${learned.length - 5} more` : ''}
+            </span>
+            <button
+              className="btn ghost small"
+              onClick={() => onChange({ learned: {} })}
+              title="Forget the words this project learned. Keywords stay."
+            >
+              Forget
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   )
 }

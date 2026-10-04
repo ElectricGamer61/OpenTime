@@ -25,7 +25,7 @@ const THEMES = themeArg === 'both' ? ['light', 'dark'] : [themeArg || 'dark']
 /** Tab label to click, and the filename README already links to. */
 const TABS = [
   { tab: 'Calendar', file: 'calendar.png' },
-  { tab: 'Dashboard', file: 'dashboard.png' },
+  { tab: 'Today', file: 'dashboard.png' },
   { tab: 'Activity', file: 'activity.png' },
   { tab: 'Reports', file: 'reports.png' },
   { tab: 'Projects', file: 'projects.png' },
@@ -71,9 +71,8 @@ for (const theme of THEMES) {
       if (!button) throw new Error('no Appearance option for ${theme}')
       button.click()
       await wait(300)
-      const save = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save')
-      if (save && !save.disabled) save.click()
-      await wait(600)
+      // Settings save themselves a moment after a change.
+      await wait(900)
     })()
   `)
   const applied = await win.webContents.executeJavaScript(

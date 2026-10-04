@@ -4,6 +4,7 @@ import { dayKey } from '../src/core/day'
 import {
   bucketByDay,
   makeIdleBlock,
+  CONTEXT_CARRY_SECONDS,
   MIN_SESSION_SECONDS,
   SessionBuilder,
   splitAtDayBoundaries,
@@ -141,6 +142,84 @@ describe('SessionBuilder', () => {
     // The category changed under it, so the old stretch closes cleanly.
     expect(closed).toHaveLength(1)
     expect(b.current?.category).toBe('Design')
+  })
+
+  it('records what filed each session', () => {
+    const b = builder()
+    const t0 = at(2026, 3, 14, 9)
+    b.sample({ app: 'Code', title: 'a.ts' }, t0)
+    expect(b.flush(t0 + 10_000)[0].match).toBe('keyword')
+  })
+})
+
+describe('SessionBuilder context', () => {
+  const work: Project[] = [
+    { id: 'p_open', name: 'OpenTime', color: '#fff', keywords: [] },
+    { id: 'p_breaks', name: 'Breaks', color: '#fff', keywords: ['youtube.com'], productivity: 'distracting' },
+  ]
+  const t0 = at(2026, 3, 14, 9)
+
+  it('keeps a window that says nothing with the project around it', () => {
+    const b = builder({ projects: work })
+    b.sample({ app: 'Code', title: 'tracker.ts - OpenTime' }, t0)
+    // The Claude app's title is just "Claude": no evidence either way.
+    expect(b.sample({ app: 'Claude', title: 'Claude' }, t0 + 5000)).toEqual([])
+    expect(b.current).toMatchObject({ category: 'OpenTime', app: 'Code', title: 'tracker.ts - OpenTime' })
+    const [session] = b.flush(t0 + 60_000)
+    expect(session).toMatchObject({ category: 'OpenTime', productivity: 'productive' })
+  })
+
+  it('lets it go after a few minutes with nothing pointing back at the work', () => {
+    const b = builder({ projects: work })
+    b.sample({ app: 'Code', title: 'tracker.ts - OpenTime' }, t0)
+    let closed: ReturnType<typeof b.sample> = []
+    for (let t = t0 + 30_000; t <= t0 + (CONTEXT_CARRY_SECONDS + 60) * 1000; t += 30_000) {
+      closed = b.sample({ app: 'Claude', title: 'Claude' }, t)
+      if (closed.length) break
+    }
+    expect(closed).toHaveLength(1)
+    expect(closed[0].category).toBe('OpenTime')
+    expect(b.current?.category).toBe('Uncategorized')
+  })
+
+  it('never carries work into something that looks like a distraction', () => {
+    const b = builder({ projects: [work[0]] })
+    b.sample({ app: 'Code', title: 'tracker.ts - OpenTime' }, t0)
+    b.sample({ app: 'Code', title: 'tracker.ts - OpenTime' }, t0 + 30_000)
+    const closed = b.sample({ app: 'Steam', title: 'Library' }, t0 + 35_000)
+    expect(closed).toHaveLength(1)
+    expect(b.current?.category).toBe('Uncategorized')
+  })
+
+  it('does not file a page before its address has been read', () => {
+    const b = builder({ projects: work })
+    b.sample({ app: 'Code', title: 'tracker.ts - OpenTime' }, t0)
+    // Switching to a browser: the address is still being read.
+    expect(b.sample({ app: 'Google Chrome', title: 'Lo-fi mix', urlPending: true }, t0 + 5000)).toEqual([])
+    const closed = b.sample(
+      { app: 'Google Chrome', title: 'Lo-fi mix', url: 'youtube.com', address: 'youtube.com/watch' },
+      t0 + 10_000
+    )
+    expect(closed).toHaveLength(1)
+    expect(closed[0].category).toBe('OpenTime')
+    expect(b.current).toMatchObject({ category: 'Breaks', url: 'youtube.com' })
+  })
+
+  it('relabels a session opened on a pending page from its start', () => {
+    const b = builder({ projects: work })
+    b.sample({ app: 'Google Chrome', title: 'Lo-fi mix', urlPending: true }, t0)
+    b.sample({ app: 'Google Chrome', title: 'Lo-fi mix', url: 'youtube.com' }, t0 + 5000)
+    expect(b.current).toMatchObject({ category: 'Breaks', startTime: t0 })
+    const [session] = b.flush(t0 + 20_000)
+    expect(session).toMatchObject({ category: 'Breaks', productivity: 'distracting', durationSeconds: 20 })
+  })
+
+  it('never writes the page address into a session', () => {
+    const b = builder({ projects: work })
+    b.sample({ app: 'chrome', title: 'PR', url: 'github.com', address: 'github.com/acme/opentime/pull/1' }, t0)
+    const [session] = b.flush(t0 + 10_000)
+    expect(session.url).toBe('github.com')
+    expect(JSON.stringify(session)).not.toContain('pull/1')
   })
 })
 

@@ -31,7 +31,7 @@ export const InsightsCard = memo(function InsightsCard({
 
   return (
     <div className="card">
-      <h2 className="card-title">What stands out</h2>
+      <h2 className="card-title">Highlights</h2>
       <div className="insights">
         {insights.slice(0, 3).map((insight) => (
           <div className={`insight ${insight.tone}`} key={insight.id}>

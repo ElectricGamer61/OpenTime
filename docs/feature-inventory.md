@@ -49,6 +49,12 @@ Three things worth naming:
   both show whether capture is live, limited or unavailable, and why. `Check
   again` rebuilds the adapter without a restart — which matters because the fix
   (granting macOS Accessibility) happens while the app is already running.
+- **On Windows the browser's address is read from its address bar.** `x-win`
+  returns no URL for Chrome or Edge there, so a small compiled helper
+  (`src/native/address-helper.cs`) asks UI Automation for it, the way a screen
+  reader does. Only the site is stored; the path is used in memory to match a
+  project. A page whose address is still being read does not change the open
+  block, so it is never briefly filed on its title alone.
 - **macOS degradation is detected, not guessed.** Without Accessibility, `x-win`
   still loads and still returns an app name while every window title comes back
   empty — the app looks like it is working and records nothing useful.
@@ -117,10 +123,12 @@ plausible number.
 | Status | **Shipped** |
 | Where | `src/core/categorize.ts` |
 
-Fixed precedence, most specific user intent first: per-app rule → learned keyword
-rule → project keyword → `Uncategorized`. Correcting a block on the timeline and
-choosing "Whole app" or "Matching text" turns the correction into a permanent
-rule.
+Every signal is weighed and the most specific wins: a "Matching text" rule, a
+window that names a project, a "Whole app" rule, a project's words and sites,
+then words a project learned from blocks the user moved into it. The app alone
+never decides: the same browser can be two projects. A window with nothing to go
+on stays with the project around it for up to five minutes, and every block says
+in one sentence why it was filed where it is.
 
 **Divergence:** OpenTime ships a deliberately tiny built-in keyword table. A large
 shipped table is someone else's opinion about your work, is wrong for most
@@ -134,10 +142,11 @@ the mechanism; the defaults are a starting point.
 | Status | **Shipped** |
 | Where | `src/core/defaults.ts`, `src/renderer/views/ProjectsView.tsx` |
 
-User-defined bodies of work with colours and keywords; matching sessions are
-attributed automatically. Rules outrank projects, which is why `DEFAULT_RULES`
-exists — "Breaks" must be a visible category without that making the time count
-as focus.
+User-defined bodies of work with a colour, words and sites, and how their time
+counts (productive, neutral or distracting, which is what makes "Breaks" count as
+distraction). A project is found by its own name without any setup, and learns
+the words of every block moved into it; its card shows what it learned and can
+forget it.
 
 ## 6. Focus and productivity scoring
 

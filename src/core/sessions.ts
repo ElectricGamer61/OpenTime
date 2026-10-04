@@ -13,10 +13,19 @@
  */
 
 import { dayKey, nextDayBoundary, DEFAULT_DAY_START_HOUR } from './day'
-import { classifyProductivity, isPrivateSample, resolveCategory } from './categorize'
+import {
+  classifyProductivity,
+  isPrivateSample,
+  looksDistracting,
+  resolveCategory,
+  UNCATEGORIZED,
+  type CategoryResolution,
+} from './categorize'
 import type {
   CategoryRule,
   IdleBlock,
+  MatchSource,
+  Productivity,
   Project,
   Session,
   SessionSource,
@@ -25,6 +34,18 @@ import type {
 
 /** Sessions shorter than this are sampling noise and are discarded. */
 export const MIN_SESSION_SECONDS = 3
+
+/**
+ * How long a window with nothing to go on stays with the project around it.
+ *
+ * Working on something means bouncing through windows that say nothing about
+ * it: an app whose title is just its name, a new tab, a file picker. Filing
+ * those minutes as Uncategorized chops one stretch of work into confetti, so
+ * they stay with the project that was open, for up to this long after the
+ * last window that actually named it. Past that, or on anything that looks
+ * like a distraction, they are their own thing again.
+ */
+export const CONTEXT_CARRY_SECONDS = 5 * 60
 
 export interface SessionBuilderOptions {
   sessionGapSeconds: number
@@ -43,6 +64,16 @@ export interface SessionBuilderOptions {
 interface OpenSession {
   category: string
   projectId?: string
+  /** Pinned by the rule or project that filed it, when one does. */
+  productivity?: Productivity
+  match: MatchSource
+  /** Last time a window actually pointed at this category (not carried). */
+  lastSignalTime: number
+  /**
+   * Opened on a browser window whose address was still being read, so its
+   * label is a placeholder the next real sample may replace.
+   */
+  provisional?: boolean
   app: string
   title: string
   url: string
@@ -86,45 +117,89 @@ export class SessionBuilder {
       return this.flush(now)
     }
 
-    const resolution = resolveCategory(sample, this.opts.rules, this.opts.projects)
-    const url = sample.url || ''
+    const open = this.open
+    const gapSeconds = open ? (now - open.lastSampleTime) / 1000 : Infinity
+    const continuing = !!open && gapSeconds <= this.opts.sessionGapSeconds
 
-    if (!this.open) {
-      this.open = {
-        category: resolution.category,
-        projectId: resolution.projectId,
-        app: sample.app,
-        title: sample.title || '',
-        url,
-        startTime: now,
-        lastSampleTime: now,
-      }
+    // A page whose address has not been read yet tells us nothing new: keep
+    // extending what is open (a few seconds, one poll at most) rather than
+    // filing it on its title alone and then moving it once the address lands.
+    if (sample.urlPending && continuing && open) {
+      open.lastSampleTime = now
       return []
     }
 
-    const gapSeconds = (now - this.open.lastSampleTime) / 1000
-    const changed = resolution.category !== this.open.category
-    if (changed || gapSeconds > this.opts.sessionGapSeconds) {
-      const closed = this.flush(this.open.lastSampleTime)
+    let resolution: CategoryResolution = resolveCategory(sample, this.opts.rules, this.opts.projects)
+    const carried =
+      resolution.source === 'default' &&
+      continuing &&
+      !!open &&
+      open.category !== UNCATEGORIZED &&
+      now - open.lastSignalTime <= CONTEXT_CARRY_SECONDS * 1000 &&
+      !looksDistracting(sample)
+    if (carried && open) {
+      resolution = {
+        category: open.category,
+        projectId: open.projectId,
+        productivity: open.productivity,
+        source: 'context',
+      }
+    }
+
+    // The session was opened on a page still being read; now that something
+    // real is known, it takes this label from its start.
+    if (continuing && open?.provisional && !sample.urlPending) {
+      this.relabel(open, resolution, now)
+      this.touch(open, sample, now, false)
+      return []
+    }
+
+    if (!open || !continuing || resolution.category !== open.category) {
+      const closed = open ? this.flush(open.lastSampleTime) : []
       this.open = {
         category: resolution.category,
         projectId: resolution.projectId,
+        productivity: resolution.productivity,
+        match: resolution.source,
+        lastSignalTime: now,
+        provisional: sample.urlPending || undefined,
         app: sample.app,
         title: sample.title || '',
-        url,
+        url: sample.url || '',
         startTime: now,
         lastSampleTime: now,
       }
       return closed
     }
 
-    // Same category: extend, and let the newest window's app/title win so the
-    // label reflects what the user is looking at right now.
-    this.open.lastSampleTime = now
-    this.open.app = sample.app
-    this.open.title = sample.title || this.open.title
-    if (url) this.open.url = url
+    this.touch(open, sample, now, carried)
     return []
+  }
+
+  /** Give an open session a new label, keeping its start. */
+  private relabel(open: OpenSession, resolution: CategoryResolution, now: number): void {
+    open.category = resolution.category
+    open.projectId = resolution.projectId
+    open.productivity = resolution.productivity
+    open.match = resolution.source
+    open.lastSignalTime = now
+    open.provisional = undefined
+  }
+
+  /**
+   * Extend the open session with a sample of the same category.
+   *
+   * The newest window's app and title win, so the label reflects what the user
+   * is looking at now; but a carried window (one that said nothing about the
+   * work) does not get to rename the block it was folded into.
+   */
+  private touch(open: OpenSession, sample: WindowSample, now: number, carried: boolean): void {
+    open.lastSampleTime = now
+    if (carried) return
+    open.lastSignalTime = now
+    open.app = sample.app
+    open.title = sample.title || open.title
+    if (sample.url) open.url = sample.url
   }
 
   /**
@@ -138,7 +213,6 @@ export class SessionBuilder {
     const end = Math.max(open.startTime, endTime ?? open.lastSampleTime)
     if ((end - open.startTime) / 1000 < MIN_SESSION_SECONDS) return []
 
-    const resolution = resolveCategory(open, this.opts.rules, this.opts.projects)
     const makeId = this.opts.makeId || defaultMakeId
     return splitAtDayBoundaries(open.startTime, end, this.opts.dayStartHour).map((seg) => ({
       id: makeId(),
@@ -148,9 +222,11 @@ export class SessionBuilder {
       title: open.title,
       url: open.url,
       productivity: classifyProductivity(open, {
-        ...resolution,
         category: open.category,
+        productivity: open.productivity,
+        source: open.match,
       }),
+      match: open.match,
       startTime: seg.start,
       endTime: seg.end,
       durationSeconds: Math.round((seg.end - seg.start) / 1000),

@@ -25,6 +25,9 @@ module.exports = {
   appId: 'app.opentime.desktop',
   productName: 'OpenTime',
   files: ['dist/**/*', 'package.json'],
+  // The address-bar reader is a program the app starts, and Windows cannot
+  // run an .exe from inside an asar archive.
+  asarUnpack: ['dist/native/**'],
   directories: {
     output: 'release',
   },

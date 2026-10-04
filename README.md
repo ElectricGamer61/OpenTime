@@ -34,9 +34,14 @@ yet; see [Running it from source](#running-it-from-source).
 ## Using it
 
 - **Just use your computer.** Within a few minutes your day starts filling in on
-  the **Calendar**. The **Dashboard** shows today at a glance.
-- **Something labelled wrong?** Click the block and rename, split, merge,
-  retime or delete it. Choose "remember this" and it's fixed for the future.
+  the **Calendar**. **Today** shows how the day is going.
+- **Add your projects.** On **Projects**, add what you work on, like "OpenTime"
+  or "AP Bio". Any window that mentions it, in any app or website, is filed
+  there by itself.
+- **Something filed wrong?** Click the block and move it to the right project.
+  OpenTime learns from that, so the next window like it lands in the right
+  place on its own. You can also change a block's times, split it or delete it.
+- **Settings save themselves.** There is no Save button to forget.
 - **Want to focus?** Click **Start focus**, name the task, and pick a timer or
   Pomodoro. Turn on **distraction blocking** and sites like YouTube get covered
   until the session ends.
@@ -79,14 +84,18 @@ too if you want it gone.
 **Tracking**
 - Automatic app and website tracking: nothing to start or stop.
 - Idle detection: time away from the keyboard is marked *Away*, never counted as work.
-- Automatic categories and projects, with rules you teach it by correcting blocks.
+- Knows which website you are on, not just which browser (only the site name is kept).
+- Files time into your projects by what is on screen: a window that names the
+  project, one of its words or sites, or words it learned from blocks you moved.
+  The same app can be two different projects.
+- Says why each block was filed where it was, in one sentence.
 - Private apps and private subjects that are never recorded at all.
 - Pause from the tray or with `Ctrl+Alt+P`, for 15, 30 or 60 minutes or until you resume.
 - Starts at sign-in, quietly in the tray (optional).
 
 **Seeing your day**
-- Calendar: your day as a timeline, by category, project or app. Day, week, month and year.
-- Dashboard: time tracked, focus time, distraction, focus score, what stands out.
+- Calendar: your day as a timeline, by project or by app. Day, week, month and year.
+- Today: time tracked, focus time, distraction, focus score, highlights.
 - Activity: every session, unfolded.
 - Reports: any week, month, quarter, year or custom range.
 - Insights: your best focus hours, meeting load, top distraction, compared with your own average.
@@ -152,10 +161,17 @@ than your threshold, the open session closes at its last observed sample and the
 loop drops to a 30-second heartbeat that does nothing but watch for your return.
 Time away is recorded as an explicit *Away* block, never as work.
 
-**Categorisation.** Sessions resolve to a category through a fixed precedence:
-an explicit per-app rule, then a learned keyword rule, then your project
-keywords, then `Uncategorized`. Correct a block on the timeline, choose "Whole
-app" or "Matching text", and the correction becomes a permanent rule.
+**Knowing what you worked on.** The app is a poor guide: the same browser holds a
+chat about one project and a video about nothing. So every signal is weighed and
+the most specific wins: a "Matching text" rule you made, then a window that
+names a project ("OpenTime", "open-time", "BBD Opentime"), then a "Whole app"
+rule, then a project's own words and sites, then words the project learned from
+blocks you moved into it. A window with nothing to go on (an app whose title is
+just its name, a new tab) stays with the project around it for up to five
+minutes. Every block says why it was filed, and moving one teaches the project.
+On Windows the browser's address is read from its address bar through UI
+Automation, by a 5 kB helper program, because the capture library returns none
+there; only the site name is ever stored. See `src/core/categorize.ts`.
 
 **Focus and distraction.** Every session is classified productive / neutral /
 distracting. The daily focus score is the productive share of tracked time,
@@ -392,6 +408,12 @@ with esbuild in ~10 ms, so a renderer change never rebuilds the main process.
 **The window is allowed to be throttled.** `backgroundThrottling` stays on;
 tracking lives in the main process and does not need the window awake.
 
+**No window, no window cost.** Closing the window destroys it, and starting at
+sign-in builds none until you open it, so tracking from the tray runs on about
+140 MB with no measurable CPU while idle (measured on Windows 11). The browser
+address reader is a 5 kB program using about 20 MB; it replaced a PowerShell
+helper that used 71 MB.
+
 ---
 
 ## Storage
@@ -463,6 +485,30 @@ a lie about what is on disk. It is off by default because silently destroying
 someone's history to satisfy a default is not something a local-first app gets to
 do.
 
+**Ask an assistant.** OpenTime has no AI in it, but it ships an MCP server, so an
+AI assistant you already use can answer questions about your time ("how long did
+I work on OpenTime this week?", "where did yesterday go?"). It reads the same
+files the app writes, never writes anything, and never touches the network.
+
+Open **Settings → Assistant**, press **Copy**, and paste the block into your
+assistant's MCP settings (Rookbot's `connectors.json`, Claude Desktop, Claude
+Code or Cursor). It runs the installed OpenTime itself, so there is nothing else
+to install. From a source checkout, `npm run build:node` builds
+`dist/mcp/server.js` and `node dist/mcp/server.js` runs it.
+
+| Tool | Answers |
+|---|---|
+| `time_summary` | where the time in a range went: totals, productivity, categories, apps, projects |
+| `time_on` | how long on one thing (a project, app, site, document), per day and on which windows |
+| `sessions` | the sessions themselves, newest first, optionally filtered |
+| `tracking_status` | whether the record is current, which days exist, and the projects with their keywords |
+
+Every tool takes a `range` in words: `today`, `yesterday`, `this week`, `last 14 days`,
+`this month`, a date, or `2026-09-01..2026-09-25`. The session in progress is only
+written when it ends, so the last few minutes are not in the answer yet.
+`OPENTIME_DATA_DIR` points the server at another data folder. The answers are
+built in `src/core/ask.ts` from the same `summarizeDay` the dashboard uses.
+
 ---
 
 ## Google Calendar
@@ -505,12 +551,12 @@ the demo history includes plausible meetings so the overlay is visible.
 ## Privacy
 
 - **No screenshots, ever.** OpenTime records metadata, not pixels.
-- **URLs are reduced to the host.** `https://mail.example.com/inbox/thread?token=…`
-  is stored as `mail.example.com`. Paths, query strings and fragments are
-  discarded before anything is persisted, so a session token or a document title
-  cannot end up in the store. A test asserts this.
-- **URL reading happens for browsers only** — it forces the accessibility tree
-  on, so it is not done for other applications.
+- **Addresses are reduced to the site.** `https://mail.example.com/inbox/thread?token=…`
+  is stored as `mail.example.com`. The query and fragment are dropped the moment
+  the address is read; the page path is used in memory to match a project (a
+  repository, a course) and is never written to disk. A test asserts this.
+- **Addresses are read for browsers only**, from the address bar, the same way a
+  screen reader does. Nothing is read from the page itself.
 - **Private apps.** Anything on the ignore list is never recorded, and any open
   session closes the moment it takes focus.
 - **Private subjects.** A client name, a matter number, a health portal — any

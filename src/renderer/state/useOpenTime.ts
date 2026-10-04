@@ -21,6 +21,7 @@ import type {
 } from '../../core/types'
 import type { FocusStartInput } from '../../core/focus'
 import type {
+  AssistantConnector,
   Bootstrap,
   CalendarResult,
   CaptureHealth,
@@ -57,6 +58,8 @@ export interface OpenTimeState {
   firstRun: boolean
   demoDays: string[]
   update: UpdateState
+  /** How an assistant connects to OpenTime's read-only MCP server. */
+  assistant: AssistantConnector | null
   selectDay(key: string): void
   /** Read arbitrary day keys, for the reporting ranges the hook does not hold. */
   loadRange(keys: string[]): Promise<DayPayload[]>
@@ -216,6 +219,10 @@ export function useOpenTime(): OpenTimeState {
     async (request: RecategorizeRequest) => {
       setDay(await api.recategorize(request))
       if (weekKeys.length) setWeek(await api.getRange(weekKeys))
+      // A retag can also teach a project words or save a rule, both of which
+      // the Projects page shows; without this they appeared only after a restart.
+      const fresh = await api.getBootstrap()
+      setBoot((prev) => (prev ? { ...prev, projects: fresh.projects, rules: fresh.rules } : prev))
     },
     [api, weekKeys]
   )
@@ -352,6 +359,7 @@ export function useOpenTime(): OpenTimeState {
       firstRun: boot?.firstRun ?? false,
       demoDays: boot?.demoDays ?? [],
       update,
+      assistant: boot?.assistant ?? null,
       selectDay,
       loadRange,
       refresh,

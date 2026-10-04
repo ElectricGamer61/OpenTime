@@ -1,7 +1,7 @@
 {
   "name": "opentime",
   "productName": "OpenTime",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "OpenTime — a lean, local-first automatic time tracker for Windows and macOS.",
   "private": true,
   "license": "Apache-2.0",
@@ -25,6 +25,7 @@
     "@miniben90/x-win": "^1.10.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
@@ -38,7 +39,8 @@
     "sharp": "^0.35.4",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "zod": "^4.6.5"
   },
   "allowScripts": {
     "electron@33.4.11": true,

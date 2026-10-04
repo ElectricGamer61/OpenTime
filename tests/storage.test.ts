@@ -121,6 +121,19 @@ describe('FileStorage', () => {
     expect((await storage.getSessions('2026-03-14'))[0].category).toBe('Design')
   })
 
+  it('clears a field patched to null, and it stays cleared after a restart', async () => {
+    const storage = await open()
+    await storage.appendSessions([{ ...session('a', 9, 30), projectId: 'p1', note: 'x' }])
+    const updated = await storage.updateSession('2026-03-14', 'a', { category: 'Admin', projectId: null, note: null })
+    expect(updated).not.toHaveProperty('projectId')
+    expect(updated).not.toHaveProperty('note')
+    // Replayed from the journal on the next start, not just held in memory.
+    const reopened = await open()
+    const [row] = await reopened.getSessions('2026-03-14')
+    expect(row).toMatchObject({ category: 'Admin' })
+    expect(row).not.toHaveProperty('projectId')
+  })
+
   it('returns null when updating a session that is not there', async () => {
     const storage = await open()
     expect(await storage.updateSession('2026-03-14', 'nope', { category: 'X' })).toBeNull()
@@ -418,5 +431,55 @@ describe('migrateConfig', () => {
 
   it('tolerates null', () => {
     expect(migrateConfig(null).version).toBe(2)
+  })
+
+  it('moves an unedited pre-0.4 Breaks onto sites, counted as distraction', () => {
+    const config = migrateConfig({
+      version: 2,
+      projects: [{ id: 'p_breaks', name: 'Breaks', color: '#f00', keywords: ['youtube', 'netflix', 'reddit', 'twitch'] }],
+      rules: [
+        { id: 'r_youtube', kind: 'keyword', match: 'youtube', category: 'Breaks', productivity: 'distracting' },
+        { id: 'r_mine', kind: 'app', match: 'steam', category: 'Breaks' },
+      ],
+    })
+    expect(config.projects[0]).toMatchObject({
+      keywords: ['youtube.com', 'netflix.com', 'reddit.com', 'twitch.tv'],
+      productivity: 'distracting',
+    })
+    // The starter word rule is retired; a rule the user made is kept.
+    expect(config.rules.map((r) => r.id)).toEqual(['r_mine'])
+  })
+
+  it('leaves a Breaks someone edited alone, apart from how it counts', () => {
+    const config = migrateConfig({
+      version: 2,
+      projects: [{ id: 'p_breaks', name: 'Breaks', color: '#f00', keywords: ['youtube', 'chess'] }],
+    })
+    expect(config.projects[0].keywords).toEqual(['youtube', 'chess'])
+    expect(config.projects[0].productivity).toBe('distracting')
+
+    const chosen = migrateConfig({
+      version: 2,
+      projects: [{ id: 'p_breaks', name: 'Breaks', color: '#f00', keywords: [], productivity: 'neutral' }],
+    })
+    expect(chosen.projects[0].productivity).toBe('neutral')
+  })
+
+  it('drops a malformed learned-word map instead of trusting it', () => {
+    const config = migrateConfig({
+      version: 2,
+      projects: [
+        {
+          id: 'x',
+          name: 'X',
+          color: '#fff',
+          keywords: [],
+          learned: { good: 2, bad: -1, worse: 'three' as unknown as number },
+          productivity: 'sometimes' as never,
+        },
+      ],
+    })
+    expect(config.projects[0].learned).toEqual({ good: 2 })
+    expect(config.projects[0].productivity).toBeUndefined()
   })
 })
