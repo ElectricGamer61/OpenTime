@@ -6,7 +6,6 @@ import { dayStartTs } from '../../core/day'
 import { rangeLabel } from '../../core/range'
 import { Breakdown } from '../components/Charts'
 import { Empty } from '../components/Empty'
-import { RefreshButton } from '../components/RefreshButton'
 import { duration, longDate, percent, timeOfDay } from '../lib/format'
 import { categoryColors } from '../lib/palette'
 import type { OpenTimeState } from '../state/useOpenTime'
@@ -117,18 +116,17 @@ export function ActivityView({ app }: { app: OpenTimeState }) {
               This week
             </button>
           </div>
-          <RefreshButton onRefresh={() => void app.refresh()} />
         </div>
       </div>
 
       <div className="grid" style={{ gap: 14 }}>
         <div className="grid cols-2">
           <div className="card">
-            <h2 className="card-title">Categories</h2>
+            <h2 className="card-title">Projects</h2>
             <Breakdown buckets={categories} projects={app.projects} limit={10} />
           </div>
           <div className="card">
-            <h2 className="card-title">Applications</h2>
+            <h2 className="card-title">Apps and sites</h2>
             <Breakdown buckets={apps} projects={app.projects} palette={appColors} limit={10} />
           </div>
         </div>
@@ -139,8 +137,8 @@ export function ActivityView({ app }: { app: OpenTimeState }) {
               names its day rather than leaving the reader to assume it
               followed the toggle. */}
           <h2 className="card-title">
-            Recorded sessions
-            <span className="hint">{dayLabel} · every row exactly as it is stored</span>
+            Everything recorded
+            <span className="hint">{dayLabel}</span>
           </h2>
           {day.sessions.length ? (
             <div className="session-table">

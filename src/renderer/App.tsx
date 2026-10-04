@@ -61,7 +61,7 @@ interface NavItem {
  */
 const NAV_GROUPS: NavItem[][] = [
   [
-    { id: 'dashboard', label: 'Dashboard', Icon: IconDashboard },
+    { id: 'dashboard', label: 'Today', Icon: IconDashboard },
     { id: 'calendar', label: 'Calendar', Icon: IconCalendar },
     { id: 'activity', label: 'Activity', Icon: IconActivity },
   ],
@@ -462,21 +462,6 @@ function TrackingChip({ app }: { app: OpenTimeState }) {
 }
 
 /**
- * The rail-sized name for a capture adapter.
- *
- * Every adapter is named `kind (detail)`, so the leading word is the answer to
- * the only question the rail has room to ask: is this real capture or generated
- * activity. Anything unrecognised is shown as-is rather than guessed at.
- */
-function captureKind(adapter: string | undefined): string {
-  if (!adapter) return '-'
-  const kind = adapter.split(' (')[0]
-  if (kind === 'demo') return 'Demo'
-  if (kind === 'x-win') return 'Native'
-  return kind
-}
-
-/**
  * The pinned block at the bottom of the rail: what the engine is doing, how long
  * the current unbroken stretch has run, and where the data lives. It owns its
  * own tick so the rest of the shell never re-renders.
@@ -492,7 +477,7 @@ function RailFooter({ app }: { app: OpenTimeState }) {
       <div className={`rail-status ${state}`}>
         <i className="beat" />
         <span className="nav-label">
-          {state === 'paused' ? 'Paused' : state === 'tracking' ? 'Tracking' : 'Waiting for input'}
+          {state === 'paused' ? 'Paused' : state === 'tracking' ? 'Tracking' : 'Away'}
         </span>
       </div>
       {/* Only shown once the stretch is worth a number: below a minute
@@ -500,7 +485,7 @@ function RailFooter({ app }: { app: OpenTimeState }) {
           as "just started". */}
       {stretchSeconds >= 60 && state !== 'paused' ? (
         <div className="rail-meta">
-          <span>This stretch</span>
+          <span>Working for</span>
           <span>{duration(stretchSeconds)}</span>
         </div>
       ) : null}
@@ -517,15 +502,17 @@ function RailFooter({ app }: { app: OpenTimeState }) {
           </span>
         </div>
       ) : null}
+      {status?.demo ? (
       <div className="rail-meta">
-        <span>Capture</span>
+        <span>Showing</span>
         {/* The adapter names itself in full — "demo (browser preview)",
             "x-win (native)" — and the rail is ~90px wide, so the full string
             arrived as "demo (brows…". The rail carries which *kind* of capture
             is running; the exact adapter is one hover, or the Settings
             subtitle, away. */}
-        <span title={status?.captureAdapter}>{captureKind(status?.captureAdapter)}</span>
+        <span title={status?.captureAdapter}>Example data</span>
       </div>
+      ) : null}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-import { lastNDayKeys } from '../../core/day'
+import { dayKey, lastNDayKeys } from '../../core/day'
 import type { Settings } from '../../core/types'
 import type { ExportFormat } from '../../shared/ipc'
 import { IconInfo } from './Icons'
@@ -172,7 +172,24 @@ export function DataSettings({
         <select
           aria-label="Keep history for"
           value={draft.retentionDays}
-          onChange={(e) => patch({ retentionDays: Number(e.target.value) })}
+          onChange={(e) => {
+            // Settings save the moment they change, so this is the last
+            // chance to say what a shorter history actually deletes.
+            const days = Number(e.target.value)
+            if (days > 0) {
+              const oldestKept = lastNDayKeys(days, dayKey(Date.now(), draft.dayStartHour))[0]
+              const lost = app.historyKeys.filter((k) => k < oldestKept).length
+              if (
+                lost > 0 &&
+                !window.confirm(
+                  `This deletes ${lost} older day${lost === 1 ? '' : 's'} of history from this computer, and they cannot be brought back. Continue?`
+                )
+              ) {
+                return
+              }
+            }
+            patch({ retentionDays: days })
+          }}
         >
           {RETENTION_CHOICES.map((c) => (
             <option key={c.value} value={c.value}>

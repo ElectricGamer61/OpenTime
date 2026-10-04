@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { summarizeDay, summarizeWeek } from '../../core/aggregate'
 import { normalizeKeyword } from '../../core/categorize'
@@ -34,10 +34,29 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
     [weekTotals]
   )
 
-  const update = (id: string, patch: Partial<Project>) =>
-    void app.saveProjects(app.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)))
+  // Every change builds on the last one made here, not on `app.projects`,
+  // which only catches up once a save comes back. Built on that, a keyword
+  // typed and then a "Counts as" picked straight after (the field's blur
+  // saves the keyword) wrote the project back without the keyword.
+  const latest = useRef(app.projects)
+  useEffect(() => {
+    latest.current = app.projects
+  }, [app.projects])
+  const save = (next: Project[]) => {
+    latest.current = next
+    void app.saveProjects(next)
+  }
 
-  const remove = (id: string) => void app.saveProjects(app.projects.filter((p) => p.id !== id))
+  /** A patch, or a function of the project as it stands now (for lists). */
+  type Change = Partial<Project> | ((p: Project) => Partial<Project>)
+  const update = (id: string, change: Change) =>
+    save(
+      latest.current.map((p) =>
+        p.id === id ? { ...p, ...(typeof change === 'function' ? change(p) : change) } : p
+      )
+    )
+
+  const remove = (id: string) => save(latest.current.filter((p) => p.id !== id))
 
   const add = () => {
     const name = draft.trim()
@@ -46,11 +65,11 @@ export function ProjectsView({ app }: { app: OpenTimeState }) {
     const project: Project = {
       id: `p_${Date.now().toString(36)}`,
       name,
-      color: PALETTE[app.projects.length % PALETTE.length],
+      color: PALETTE[latest.current.length % PALETTE.length],
       keywords: [],
     }
     setDraft('')
-    void app.saveProjects([...app.projects, project])
+    save([...latest.current, project])
   }
 
   const removeRule = (rule: CategoryRule) =>
@@ -163,7 +182,7 @@ function ProjectCard({
 }: {
   project: Project
   seconds: number
-  onChange(patch: Partial<Project>): void
+  onChange(change: Partial<Project> | ((p: Project) => Partial<Project>)): void
   onRemove(): void
 }) {
   const [name, setName] = useState(project.name)
@@ -181,7 +200,9 @@ function ProjectCard({
       .split(',')
       .map(normalizeKeyword)
       .filter((v) => v && !project.keywords.includes(v))
-    if (values.length) onChange({ keywords: [...project.keywords, ...new Set(values)] })
+    if (values.length) {
+      onChange((p) => ({ keywords: [...p.keywords, ...new Set(values.filter((v) => !p.keywords.includes(v)))] }))
+    }
     setKeyword('')
   }
 
@@ -244,7 +265,7 @@ function ProjectCard({
               <button
                 aria-label={`Stop matching ${k}`}
                 title={`Stop matching ${k}`}
-                onClick={() => onChange({ keywords: project.keywords.filter((x) => x !== k) })}
+                onClick={() => onChange((p) => ({ keywords: p.keywords.filter((x) => x !== k) }))}
               >
                 <IconClose size={12} />
               </button>
@@ -263,7 +284,7 @@ function ProjectCard({
                 addKeyword()
               }
               if (e.key === 'Backspace' && !keyword && project.keywords.length) {
-                onChange({ keywords: project.keywords.slice(0, -1) })
+                onChange((p) => ({ keywords: p.keywords.slice(0, -1) }))
               }
             }}
           />

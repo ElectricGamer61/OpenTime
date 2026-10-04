@@ -33,20 +33,13 @@ function session(
   }
 }
 
-const NO_PROJECTS = new Map<string, string>()
-const OPTS = { mode: 'category' as const, projectNames: NO_PROJECTS }
+const OPTS = { mode: 'category' as const }
 
 describe('groupKeyFor', () => {
-  it('groups by category, app or project name', () => {
+  it('groups by project or by app', () => {
     const s = session(0, 10, { projectId: 'p1', app: 'Figma', category: 'Design' })
-    const names = new Map([['p1', 'Redesign']])
-    expect(groupKeyFor(s, 'category', names)).toBe('Design')
-    expect(groupKeyFor(s, 'app', names)).toBe('Figma')
-    expect(groupKeyFor(s, 'project', names)).toBe('Redesign')
-  })
-
-  it('names the absence of a project rather than dropping the session', () => {
-    expect(groupKeyFor(session(0, 10), 'project', NO_PROJECTS)).toBe('No project')
+    expect(groupKeyFor(s, 'category')).toBe('Design')
+    expect(groupKeyFor(s, 'app')).toBe('Figma')
   })
 })
 

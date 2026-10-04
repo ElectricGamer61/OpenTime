@@ -21,7 +21,6 @@ import {
   IconRange,
 } from '../components/Icons'
 import { HeatGrid, MonthCalendar } from '../components/RangeGrids'
-import { RefreshButton } from '../components/RefreshButton'
 import { duration, longDate, percent } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
 import type { DayPayload } from '../../shared/ipc'
@@ -63,18 +62,26 @@ export function ReportsView({
   // A range change is an async read of up to two years of day files. The
   // request id is what stops a slow year landing on top of a fast week the
   // user asked for afterwards.
+  //
+  // It used to depend on the whole app state, which changes on every status
+  // push, so a year of files was re-read (and the page blanked to "Reading")
+  // each time you switched windows. Now it reloads when the range changes, or
+  // quietly, in place, when tracked data does (`app.week` changes then).
+  const { loadRange, week } = app
+  const shownRange = useRef<DayRange | null>(null)
   useEffect(() => {
     const id = (requestId.current += 1)
     let cancelled = false
-    setPayloads(null)
-    void app.loadRange(rangeKeys(range)).then((result) => {
+    if (shownRange.current !== range) setPayloads(null)
+    shownRange.current = range
+    void loadRange(rangeKeys(range)).then((result) => {
       if (cancelled || id !== requestId.current) return
       setPayloads(result)
     })
     return () => {
       cancelled = true
     }
-  }, [app, range])
+  }, [loadRange, range, week])
 
   const days = useMemo<DaySummary[]>(
     () => (payloads || []).map((d) => summarizeDay(d.dayKey, d.sessions, d.idle, d.events)),
@@ -103,7 +110,6 @@ export function ReportsView({
             day{activeDays === 1 ? '' : 's'}
           </p>
         </div>
-        <RefreshButton onRefresh={() => void app.refresh()} />
       </div>
 
       <div className="range-bar">

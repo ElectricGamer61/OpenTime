@@ -90,12 +90,11 @@ export const DayGrid = memo(function DayGrid({
   pickedIds,
   onSelect,
 }: DayGridProps) {
-  const projectNames = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects])
 
   const layout = useMemo(() => {
-    const entries = buildEntries(sessions, { mode, projectNames, idle, events })
+    const entries = buildEntries(sessions, { mode, idle, events })
     return assignLanes(entries, MAX_LANES)
-  }, [sessions, idle, events, mode, projectNames])
+  }, [sessions, idle, events, mode])
 
   const colors = useMemo(() => {
     const labels = layout.entries.filter((e) => e.kind === 'session').map((e) => e.label)

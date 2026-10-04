@@ -81,7 +81,6 @@ import { Updater } from './updater'
 const DEV_SERVER_URL = process.env.OPENTIME_DEV_SERVER_URL
 /** Passed by the login item: start tracking in the tray without a window. */
 const HIDDEN_FLAG = '--hidden'
-let windowOpenedBefore = false
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -172,15 +171,8 @@ function createWindow(): void {
     },
   })
 
-  // Paint only when there is something to show — no white flash on launch.
-  // At sign-in the window stays hidden: tracking runs from the tray, and the
-  // tray icon or Ctrl+Alt+O brings the window up.
-  // Only the very first window: one reopened later from the tray must show.
-  const startHidden = !windowOpenedBefore && process.argv.includes(HIDDEN_FLAG) && !!tray
-  windowOpenedBefore = true
-  mainWindow.once('ready-to-show', () => {
-    if (!startHidden) mainWindow?.show()
-  })
+  // Paint only when there is something to show: no white flash on launch.
+  mainWindow.once('ready-to-show', () => mainWindow?.show())
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -1150,7 +1142,11 @@ if (!app.requestSingleInstanceLock()) {
       console.error('[main] tray unavailable:', err)
     }
 
-    createWindow()
+    // At sign-in OpenTime starts in the tray with no window at all: tracking
+    // needs only this process, and a hidden window would hold a renderer
+    // (and its memory) that nobody is looking at. The tray icon or
+    // Ctrl+Alt+O builds the window when someone wants it.
+    if (!(process.argv.includes(HIDDEN_FLAG) && tray)) createWindow()
 
     tracker.start()
     registerGlobalShortcuts()

@@ -957,16 +957,6 @@ button.update-chip:hover {
   background: var(--distracting-wash);
 }
 
-.btn.spin .btn-icon {
-  animation: spin 650ms var(--ease);
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .pill {
   display: inline-flex;
   align-items: center;
@@ -2910,6 +2900,18 @@ button.update-chip:hover {
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--text-dim);
+}
+
+/* Settings save themselves; this says so, and briefly confirms each save. */
+.saved-note {
+  align-self: center;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  transition: color var(--fast) var(--ease);
+}
+
+.saved-note.on {
+  color: var(--productive);
 }
 
 /* Settings → Assistant: three steps and the block to paste. */

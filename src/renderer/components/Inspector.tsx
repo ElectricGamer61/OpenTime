@@ -241,7 +241,7 @@ export const Inspector = memo(function Inspector({
           <Empty
             glyph={<IconEmptyPointer />}
             title="Nothing selected"
-            hint="Pick a block on the timeline to retag, retime, split or delete it. Ctrl-click a second block to merge them, or record time OpenTime could not see."
+            hint="Click a block on the calendar to move it to another project, change its times, or delete it. You can also add time OpenTime could not see."
           />
           <div className="row" style={{ justifyContent: 'center' }}>
             <button className="btn ghost" onClick={() => setMode('manual')}>
@@ -281,7 +281,7 @@ export const Inspector = memo(function Inspector({
         </div>
 
         <div className="field">
-          <label htmlFor="insp-manual-category">Category</label>
+          <label htmlFor="insp-manual-category">Project</label>
           <input
             id="insp-manual-category"
             list="opentime-categories"

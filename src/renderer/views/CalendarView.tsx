@@ -19,21 +19,22 @@ import {
   IconClose,
   IconFolder,
   IconInfo,
-  IconList,
 } from '../components/Icons'
 import { Inspector } from '../components/Inspector'
-import { RefreshButton } from '../components/RefreshButton'
 import { SummaryPanel } from '../components/SummaryPanel'
 import type { DayEntry, GroupMode } from '../lib/entries'
 import { datedTitle, duration, weekdayShort } from '../lib/format'
 import { categoryColors, RESERVED_COLORS } from '../lib/palette'
 import type { OpenTimeState } from '../state/useOpenTime'
 
-/** The grid's grouping tabs. "Entries" is the ungrouped-by-anything default. */
-const TABS: Array<{ id: GroupMode; label: string; Icon: typeof IconList }> = [
-  { id: 'category', label: 'Time entries', Icon: IconList },
-  { id: 'project', label: 'Projects', Icon: IconFolder },
-  { id: 'app', label: 'Apps', Icon: IconApps },
+/**
+ * The grid's grouping tabs: by project or by app. There used to be a third,
+ * "Time entries", which grouped by the same label as "Projects" in all but
+ * name, so people had to guess the difference.
+ */
+const TABS: Array<{ id: GroupMode; label: string; Icon: typeof IconFolder }> = [
+  { id: 'category', label: 'By project', Icon: IconFolder },
+  { id: 'app', label: 'By app', Icon: IconApps },
 ]
 
 type CalendarRange = 'day' | 'week' | 'month' | 'year'
@@ -137,16 +138,8 @@ export function CalendarView({
   /** Donut slices for whichever grouping the tabs are on. */
   const slices = useMemo<Slice[]>(() => {
     if (!day) return []
-    const projectNames = new Map(app.projects.map((p) => [p.id, p.name]))
     const totals = new Map<string, number>()
-    if (mode === 'category') for (const b of summary.byCategory) totals.set(b.key, b.seconds)
-    else if (mode === 'app') for (const b of summary.byApp) totals.set(b.key, b.seconds)
-    else {
-      for (const s of day.sessions) {
-        const name = (s.projectId && projectNames.get(s.projectId)) || 'No project'
-        totals.set(name, (totals.get(name) || 0) + s.durationSeconds)
-      }
-    }
+    for (const b of mode === 'app' ? summary.byApp : summary.byCategory) totals.set(b.key, b.seconds)
     const names = [...totals.keys()].sort()
     const colors = categoryColors(app.projects, names)
     return names.map((name) => ({
@@ -294,7 +287,6 @@ export function CalendarView({
             // tabs that silently do nothing.
             <div className="grid-tabs-hint">Click any day to see it hour by hour.</div>
           )}
-          <RefreshButton onRefresh={() => void app.refresh()} />
         </div>
 
         <div className="grid-datebar">

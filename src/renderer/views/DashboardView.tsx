@@ -6,7 +6,6 @@ import { FocusRing, Stat, WeekChart } from '../components/Charts'
 import { FocusSessionsCard } from '../components/FocusSessionsCard'
 import { InsightsCard } from '../components/InsightsCard'
 import { NowCard } from '../components/NowCard'
-import { RefreshButton } from '../components/RefreshButton'
 import { duration, longDate, percent } from '../lib/format'
 import type { OpenTimeState } from '../state/useOpenTime'
 
@@ -48,19 +47,16 @@ export function DashboardView({
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">Dashboard</h1>
+          <h1 className="page-title">Today</h1>
           <p className="page-sub">
             {longDate(dayStartTs(day.dayKey, settings.dayStartHour))}
             <span className="sep">·</span>
             {duration(summary.totalSeconds)} tracked
             <span className="sep">·</span>
-            {summary.switches} context switches
+            switched tasks {summary.switches} {summary.switches === 1 ? 'time' : 'times'}
           </p>
         </div>
-        <div className="row">
-          {app.status?.demo ? <span className="pill info">Demo capture</span> : null}
-          <RefreshButton onRefresh={() => void app.refresh()} />
-        </div>
+        {app.status?.demo ? <span className="pill info">Example data</span> : null}
       </div>
 
       <div className="grid" style={{ gap: 14 }}>
@@ -94,7 +90,7 @@ export function DashboardView({
             color="var(--distracting)"
           />
           <Stat
-            label="Longest deep block"
+            label="Longest focus stretch"
             value={duration(summary.longestFocusSeconds)}
             foot={
               summary.meetingSeconds
@@ -108,7 +104,10 @@ export function DashboardView({
         <div className="grid cols-2">
           <div className="grid" style={{ gap: 14, alignContent: 'start' }}>
             <div className="card">
-              <h2 className="card-title">Day balance</h2>
+              <h2 className="card-title">
+                How today went
+                <span className="hint">Focus score is out of 100</span>
+              </h2>
               <FocusRing summary={summary} />
             </div>
 

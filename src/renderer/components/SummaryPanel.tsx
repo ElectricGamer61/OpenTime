@@ -10,8 +10,7 @@ import { Donut, StackedBar } from './Charts'
 import { IconChevronRight, IconSettings } from './Icons'
 
 const MODES: Array<{ id: GroupMode; label: string }> = [
-  { id: 'category', label: 'Categories' },
-  { id: 'project', label: 'Projects' },
+  { id: 'category', label: 'Projects' },
   { id: 'app', label: 'Apps' },
 ]
 
@@ -105,7 +104,7 @@ export const SummaryPanel = memo(function SummaryPanel({
           <span className="sep">·</span>
           <span className="summary-crumb-day">{isToday ? 'Today' : 'This day'}</span>
         </div>
-        <button className="summary-link" onClick={onCustomize} title="Goals, categories and rules">
+        <button className="summary-link" onClick={onCustomize} title="Goals, projects and rules">
           <IconSettings size={13} />
           Customize
         </button>
@@ -113,7 +112,7 @@ export const SummaryPanel = memo(function SummaryPanel({
 
       <div className="summary-headline">
         <div className="headline-stat">
-          <div className="headline-label">Work hours</div>
+          <div className="headline-label">Time tracked</div>
           <div className="headline-value">{duration(summary.totalSeconds)}</div>
           {delta !== null ? (
             <div className={`headline-delta${delta >= 0 ? ' up' : ' down'}`}>
@@ -152,10 +151,10 @@ export const SummaryPanel = memo(function SummaryPanel({
 
       <div className="summary-cards">
         <div className="mini-card">
-          <div className="mini-label">Percent of work day</div>
+          <div className="mini-label">Focused</div>
           <div className="mini-value">{tracked ? percent(productiveShare) : EMPTY_VALUE}</div>
           <div className="mini-foot">
-            {tracked ? `focus, of ${duration(summary.totalSeconds)} tracked` : 'Nothing tracked yet'}
+            {tracked ? `of ${duration(summary.totalSeconds)} tracked` : 'Nothing tracked yet'}
           </div>
         </div>
         <div className="mini-card">
@@ -175,7 +174,7 @@ export const SummaryPanel = memo(function SummaryPanel({
       </div>
 
       <div className="summary-section">
-        <span>Productivity metrics</span>
+        <span>How it counted</span>
         <b>Total {duration(spendTotal)}</b>
       </div>
       <StackedBar slices={spend} />
@@ -186,7 +185,7 @@ export const SummaryPanel = memo(function SummaryPanel({
       {topApps.length ? (
         <>
           <div className="summary-section">
-            <span>Top applications</span>
+            <span>Top apps</span>
             <b>{summary.byApp.length} in all</b>
           </div>
           <div className="summary-apps">

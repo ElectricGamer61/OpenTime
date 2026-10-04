@@ -6,18 +6,20 @@
  * was on. This reads it the way screen readers (and Rize) do: through UI
  * Automation, asking the focused browser window for its address box.
  *
- * UI Automation is a .NET/COM API, so the reading happens in one long-lived
- * PowerShell helper rather than in Electron: started on the first browser
- * window, it answers one line per request and costs nothing while idle. The
- * capture loop never waits on it. A title it has not read yet comes back as
- * 'pending', the session builder holds that page's label until the next poll,
- * and by then the answer is in the cache.
+ * UI Automation is a .NET API, so the reading happens in a tiny helper
+ * program (src/native/address-helper.cs, about 20 MB while running) rather
+ * than in Electron: started on the first browser window, it answers one line
+ * per request and costs no CPU while idle. The capture loop never waits on
+ * it. A title it has not read yet comes back as 'pending', the session
+ * builder holds that page's label until the next poll, and by then the answer
+ * is in the cache.
  *
  * What leaves this module is `readAddress`'s host and path, never the query or
  * fragment, and only the host is ever stored (see `WindowSample.address`).
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import path from 'node:path'
 
 import { readAddress } from '../../core/categorize'
 
@@ -29,74 +31,31 @@ export interface AddressReader {
   dispose(): void
 }
 
-/**
- * The helper. For every line on stdin it finds the foreground window, asks UI
- * Automation for the first edit box in it (the address bar comes first in
- * every major browser's tree), and prints "title<TAB>value". Tabs and line
- * breaks are flattened so one answer is always exactly one line.
- */
-const HELPER = String.raw`
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-public static class OpenTimeForeground {
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-}
-'@
-$ErrorActionPreference = 'Continue'
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-$edit = New-Object System.Windows.Automation.PropertyCondition(
-  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-  [System.Windows.Automation.ControlType]::Edit)
-while ($null -ne [Console]::In.ReadLine()) {
-  $title = ''
-  $value = ''
-  try {
-    $hwnd = [OpenTimeForeground]::GetForegroundWindow()
-    $text = New-Object System.Text.StringBuilder 1024
-    [void][OpenTimeForeground]::GetWindowText($hwnd, $text, 1024)
-    $title = $text.ToString()
-    $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
-    $box = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $edit)
-    if ($null -ne $box) {
-      $pattern = $null
-      if ($box.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) {
-        $value = $pattern.Current.Value
-      }
-    }
-  } catch {}
-  $flat = { param($s) ($s -replace '[\t\r\n]', ' ') }
-  [Console]::Out.WriteLine((& $flat $title) + [char]9 + (& $flat $value))
-  [Console]::Out.Flush()
-}
-`
-
 /** How long a read address is trusted before the same title is read again. */
 const FOUND_TTL_MS = 60_000
 /** A window with no readable address (the bar was being typed in) is retried sooner. */
 const MISSING_TTL_MS = 10_000
 /** An answer slower than this means the helper is stuck. */
 const TIMEOUT_MS = 4_000
-/** The first answer also waits for PowerShell to start and compile its helper. */
-const STARTUP_TIMEOUT_MS = 20_000
+/** The first answer also waits for the helper to start and load UI Automation. */
+const STARTUP_TIMEOUT_MS = 15_000
 const MAX_CACHE = 64
 /** Restarts allowed before giving up for the session: a machine that cannot run it never will. */
 const MAX_RESTARTS = 3
 
 export type SpawnHelper = () => ChildProcessWithoutNullStreams
 
-export function spawnPowerShellHelper(): ChildProcessWithoutNullStreams {
-  const encoded = Buffer.from(HELPER, 'utf16le').toString('base64')
-  return spawn(
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-    { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }
-  )
+/**
+ * The built helper, next to the main bundle (dist/native). In the installed
+ * app it is unpacked beside the asar archive, because Windows cannot run a
+ * program from inside one.
+ */
+export function helperPath(): string {
+  return path.join(__dirname, '..', 'native', 'address-helper.exe').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
+}
+
+export function spawnHelperProgram(): ChildProcessWithoutNullStreams {
+  return spawn(helperPath(), [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
 }
 
 export class WindowsAddressReader implements AddressReader {
@@ -110,7 +69,7 @@ export class WindowsAddressReader implements AddressReader {
   private warm = false
 
   constructor(
-    private readonly spawnHelper: SpawnHelper = spawnPowerShellHelper,
+    private readonly spawnHelper: SpawnHelper = spawnHelperProgram,
     private readonly now: () => number = Date.now
   ) {}
 

@@ -93,7 +93,7 @@ const SHOTS = [
     name: 'focus',
     steps: [click('.focus-start'), typeGoal('Write the report')],
   },
-  { name: 'dashboard-focus', steps: [click('.nav-item', 'Dashboard')] },
+  { name: 'dashboard-focus', steps: [click('.nav-item', 'Today')] },
   { name: 'settings-privacy', steps: [click('.nav-item', 'Settings'), click('.settings-nav button', 'Privacy')] },
   { name: 'goals', steps: [click('.nav-item', 'Goals')] },
   { name: 'projects', steps: [click('.nav-item', 'Projects')] },

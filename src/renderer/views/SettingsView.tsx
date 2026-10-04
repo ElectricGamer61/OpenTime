@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { DEFAULT_BLOCK_TARGETS, normalizeBlockTarget } from '../../core/blocking'
 import type { Settings } from '../../core/types'
@@ -123,16 +123,47 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
   const [section, setSection] = useState<SectionId>('general')
   const [draft, setDraft] = useState<Settings | null>(app.settings)
   const [calendarMessage, setCalendarMessage] = useState('')
+  const [saved, setSaved] = useState(false)
+  const pending = useRef<{ timer: number; next: Settings } | null>(null)
+  const savedTimer = useRef(0)
 
-  useEffect(() => setDraft(app.settings), [app.settings])
+  // Take outside changes (the tray, onboarding), but never over an edit that
+  // is still on its way to disk: that would snap a field back mid-typing.
+  useEffect(() => {
+    if (!pending.current) setDraft(app.settings)
+  }, [app.settings])
 
   /**
-   * Preview the theme while it is still a draft.
+   * Every change saves itself, a moment after the last one.
    *
-   * Every other setting on this page is invisible until saved, but a theme you
-   * cannot see is a theme you cannot choose. Leaving the page without saving
-   * puts the stored theme back, so the preview never outlives the decision.
+   * There used to be a Save button, and a switch flipped without pressing it
+   * was quietly lost when you left the page. The short wait only gathers a
+   * burst of typing into one write.
    */
+  const save = useRef<(next: Settings) => void>(() => {})
+  save.current = (next: Settings) => {
+    pending.current = null
+    void app.saveSettings(next).then(() => {
+      setSaved(true)
+      window.clearTimeout(savedTimer.current)
+      savedTimer.current = window.setTimeout(() => setSaved(false), 1600)
+    })
+  }
+
+  // Leaving the page mid-edit still saves it.
+  useEffect(
+    () => () => {
+      const waiting = pending.current
+      if (waiting) {
+        window.clearTimeout(waiting.timer)
+        save.current(waiting.next)
+      }
+      window.clearTimeout(savedTimer.current)
+    },
+    []
+  )
+
+  /** The theme follows the draft, so a choice shows the moment it is made. */
   const draftTheme = draft?.theme
   const savedTheme = app.settings?.theme
   useEffect(() => {
@@ -147,8 +178,12 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
 
   if (!draft) return null
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(app.settings)
-  const patch = (p: Partial<Settings>) => setDraft({ ...draft, ...p })
+  const patch = (p: Partial<Settings>) => {
+    const next = { ...draft, ...p }
+    setDraft(next)
+    if (pending.current) window.clearTimeout(pending.current.timer)
+    pending.current = { next, timer: window.setTimeout(() => save.current(next), 400) }
+  }
 
   const runCalendar = async (fn: () => Promise<{ ok: boolean; message: string }>) => {
     setCalendarMessage('Working…')
@@ -164,22 +199,12 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
         <div>
           <h1 className="page-title">Settings</h1>
           <p className="page-sub">
-            OpenTime {app.appVersion} · tracking with {app.status?.captureAdapter || 'unknown'}
+            OpenTime {app.appVersion}
           </p>
         </div>
-        <div className="row">
-          {dirty ? (
-            <>
-              <span className="pill warn">Unsaved changes</span>
-              <button className="btn ghost" onClick={() => setDraft(app.settings)}>
-                Discard
-              </button>
-            </>
-          ) : null}
-          <button className="btn primary" disabled={!dirty} onClick={() => void app.saveSettings(draft)}>
-            Save
-          </button>
-        </div>
+        <span className={`saved-note${saved ? ' on' : ''}`} role="status" aria-live="polite">
+          {saved ? 'Saved' : 'Changes save automatically'}
+        </span>
       </div>
 
       <div className="settings">
@@ -332,7 +357,7 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
               name="Status"
               desc={
                 app.capture?.notice ||
-                `Reading the focused window through ${app.capture?.adapter || 'the system'}.`
+                'OpenTime can see which app and website you are using, and nothing more.'
               }
             >
               <div className="row">
@@ -345,7 +370,7 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
                     app.capture?.demo ? 'muted' : app.capture?.notice ? 'warn' : 'live'
                   }`}
                 >
-                  {app.capture?.demo ? 'Generated' : app.capture?.notice ? 'Limited' : 'Working'}
+                  {app.capture?.demo ? 'Example data' : app.capture?.notice ? 'Limited' : 'Working'}
                 </span>
                 <button className="btn" onClick={() => void app.reloadCapture()}>
                   Check again
@@ -371,8 +396,8 @@ export function SettingsView({ app }: { app: OpenTimeState }) {
                 </select>
               </Row>
               <Row
-                name="Session gap"
-                desc="A pause longer than this starts a new block even when the app has not changed."
+                name="Start a new block after a pause of"
+                desc="Even in the same app, a pause this long begins a new block on the calendar."
               >
                 <select
                   value={draft.sessionGapSeconds}
